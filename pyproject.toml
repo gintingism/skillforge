@@ -48,6 +48,9 @@ Documentation = "https://gintingism.github.io/skillforge/"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+skillforge = ["builtin_skills/*/SKILL.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

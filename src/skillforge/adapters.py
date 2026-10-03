@@ -50,6 +50,31 @@ class ClaudeAdapter(Adapter):
         return target
 
 
+class ClaudeCodeAdapter(ClaudeAdapter):
+    """Adapter for Claude Code project skills."""
+
+
+class CursorAdapter(Adapter):
+    """Adapter for Cursor project rules."""
+
+    def detect(self, project: Path) -> bool:
+        return (project / ".cursor").is_dir()
+
+    def install(self, skill: Skill, project: Path) -> Path:
+        target = project / ".cursor" / "skills" / skill.name / "SKILL.md"
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(skill.render(), encoding="utf-8")
+        except OSError as exc:
+            raise AdapterError(f"Unable to install Cursor skill: {exc}") from exc
+        return target
+
+
 def detect_adapters(project: Path) -> list[Adapter]:
     """Return adapters detected in a project, in stable order."""
-    return [adapter for adapter in (CopilotAdapter(), ClaudeAdapter()) if adapter.detect(project)]
+    adapters = (
+        CopilotAdapter(),
+        ClaudeCodeAdapter(),
+        CursorAdapter(),
+    )
+    return [adapter for adapter in adapters if adapter.detect(project)]

@@ -12,7 +12,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from .errors import SkillForgeError
-from .registry import LocalRegistry, Registry
+from .registry import BuiltinRegistry, CompositeRegistry, LocalRegistry, Registry
 from .skill import parse_skill
 
 LOGGER = logging.getLogger("skillforge.mcp")
@@ -81,9 +81,10 @@ def create_mcp_server(registry: Registry) -> MCPServer:
     return server
 
 
-def registry_from_environment() -> LocalRegistry:
-    """Build a local registry from SKILLFORGE_REGISTRY_PATH or its default."""
-    return LocalRegistry(Path(os.environ.get("SKILLFORGE_REGISTRY_PATH", ".skillforge")))
+def registry_from_environment() -> Registry:
+    """Build explicit local-plus-built-in registry from environment."""
+    local = LocalRegistry(Path(os.environ.get("SKILLFORGE_REGISTRY_PATH", ".skillforge")))
+    return CompositeRegistry((local, BuiltinRegistry()))
 
 
 def run_mcp_server() -> None:

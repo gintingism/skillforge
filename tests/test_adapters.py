@@ -23,7 +23,7 @@ def test_claude_adapter_installs_skill_directory(tmp_path: Path) -> None:
 
 def test_detect_adapters(tmp_path: Path) -> None:
     (tmp_path / ".claude").mkdir()
-    assert [type(a).__name__ for a in detect_adapters(tmp_path)] == ["ClaudeAdapter"]
+    assert [type(a).__name__ for a in detect_adapters(tmp_path)] == ["ClaudeCodeAdapter"]
 
 
 def test_detect_adapters_finds_both_targets(tmp_path: Path) -> None:
@@ -31,7 +31,7 @@ def test_detect_adapters_finds_both_targets(tmp_path: Path) -> None:
     (tmp_path / ".claude").mkdir()
     assert [type(a).__name__ for a in detect_adapters(tmp_path)] == [
         "CopilotAdapter",
-        "ClaudeAdapter",
+        "ClaudeCodeAdapter",
     ]
 
 

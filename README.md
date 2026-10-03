@@ -22,7 +22,7 @@ skillforge search review --registry .\.skillforge
 skillforge install code-review --registry .\.skillforge --project .
 ```
 
-The local registry stores skills as `<registry>/<name>/SKILL.md`. The registry interface is intentionally abstract so a GitHub-backed implementation can be added without changing CLI consumers. Installation detects `.github` for Copilot and `.claude` for Claude; Copilot receives `.github/copilot-instructions.md`, while Claude receives `.claude/skills/<name>/SKILL.md`.
+The local registry stores skills as `<registry>/<name>/SKILL.md`. The explicit built-in registry ships seven skills and acts as fallback after configured local skills. The registry interface is intentionally abstract so a GitHub-backed implementation can be added without changing CLI consumers. Installation detects `.github` for Copilot, `.claude` for Claude Code, and `.cursor` for Cursor. Copilot receives `.github/copilot-instructions.md`; Claude Code receives `.claude/skills/<name>/SKILL.md`; Cursor receives `.cursor/skills/<name>/SKILL.md`.
 
 ## MCP server
 

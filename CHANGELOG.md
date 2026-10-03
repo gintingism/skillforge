@@ -7,3 +7,4 @@
 - Added Typer CLI commands.
 - Added official MCP server with resources and read-only tools.
 - Added test coverage gate and strict type checking.
+- Added built-in skills, explicit built-in registry fallback, and Cursor adapter support.

@@ -11,11 +11,16 @@ import typer
 from .adapters import detect_adapters
 from .errors import SkillForgeError
 from .mcp_server import run_mcp_server
-from .registry import LocalRegistry
+from .registry import BuiltinRegistry, CompositeRegistry, LocalRegistry, Registry
 from .skill import Skill
 
 app = typer.Typer(help="Create, validate, discover, install, and package portable skills.")
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
+
+def _registry(path: Path) -> Registry:
+    """Use configured local skills first, then explicit packaged built-ins."""
+    return CompositeRegistry((LocalRegistry(path), BuiltinRegistry()))
 
 
 @app.command()
@@ -65,7 +70,7 @@ def pack(path: Path, output: Path = typer.Option(..., "--output", "-o")) -> None
 def search(query: str, registry: Path = typer.Option(Path(".skillforge"), "--registry")) -> None:
     """Search a local registry."""
     try:
-        skills = LocalRegistry(registry).search(query)
+        skills = _registry(registry).search(query)
     except SkillForgeError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
@@ -81,7 +86,7 @@ def install(
 ) -> None:
     """Install a skill from a local registry into detected assistant targets."""
     try:
-        skill_path = LocalRegistry(registry).install(name, project / ".skillforge-staging")
+        skill_path = _registry(registry).install(name, project / ".skillforge-staging")
         skill = Skill.load(skill_path)
         adapters = detect_adapters(project)
         if not adapters:

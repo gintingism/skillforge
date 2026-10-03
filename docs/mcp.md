@@ -19,6 +19,7 @@ SkillForge uses the official Python MCP SDK and stdio transport.
 ```
 
 Set `SKILLFORGE_REGISTRY_PATH` to local registry root. Default is `.skillforge` in current working directory.
+Packaged built-in skills remain available as fallback. Local entries take precedence for duplicate names.
 
 ## Exposed API
 
