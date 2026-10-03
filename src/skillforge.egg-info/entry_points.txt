@@ -1,0 +1,2 @@
+[console_scripts]
+skillforge = skillforge.cli:app

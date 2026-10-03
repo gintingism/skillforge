@@ -1,0 +1,43 @@
+Metadata-Version: 2.4
+Name: skillforge
+Version: 0.1.0
+Summary: A lightweight universal skill registry and packaging CLI.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: PyYAML>=6.0
+Requires-Dist: typer>=0.12
+Provides-Extra: dev
+Requires-Dist: mypy>=1.10; extra == "dev"
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: types-PyYAML>=6.0; extra == "dev"
+
+# SkillForge
+
+SkillForge is a dependency-light MVP for creating, validating, discovering, installing, and packaging portable `SKILL.md` files. The universal format uses YAML frontmatter with required `name` and `description` fields followed by Markdown instructions.
+
+## Install
+
+```powershell
+python -m pip install -e .
+```
+
+The CLI is exposed as `skillforge` (or `python -m skillforge.cli` in an environment configured for module execution).
+
+## Usage
+
+```powershell
+skillforge create code-review --description "Review code carefully" --directory .\skills\code-review
+skillforge validate .\skills\code-review\SKILL.md
+skillforge pack .\skills\code-review --output .\code-review.zip
+skillforge search review --registry .\.skillforge
+skillforge install code-review --registry .\.skillforge --project .
+```
+
+The local registry stores skills as `<registry>/<name>/SKILL.md`. The registry interface is intentionally abstract so a GitHub-backed implementation can be added without changing CLI consumers. Installation detects `.github` for Copilot and `.claude` for Claude; Copilot receives `.github/copilot-instructions.md`, while Claude receives `.claude/skills/<name>/SKILL.md`.
+
+## Development
+
+```powershell
+python -m pip install -e ".[dev]"
+python -m pytest
+```
