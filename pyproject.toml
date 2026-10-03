@@ -5,8 +5,19 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "skillforge"
 version = "0.1.0"
-description = "A lightweight universal skill registry and packaging CLI."
+description = "Portable SKILL.md registry, adapters, CLI, and MCP server."
 readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "gintingism", email = "gintingism@users.noreply.github.com" },
+]
+keywords = ["skills", "mcp", "copilot", "claude", "developer-tools"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Libraries",
+]
 requires-python = ">=3.11"
 dependencies = [
     "mcp>=2.3.0",
@@ -21,9 +32,18 @@ dev = [
     "pytest-cov>=5.0",
     "types-PyYAML>=6.0",
 ]
+docs = [
+    "mkdocs-material>=9.5",
+]
 
 [project.scripts]
 skillforge = "skillforge.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/gintingism/skillforge"
+Repository = "https://github.com/gintingism/skillforge"
+Issues = "https://github.com/gintingism/skillforge/issues"
+Documentation = "https://gintingism.github.io/skillforge/"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -2,6 +2,8 @@
 
 SkillForge is a dependency-light MVP for creating, validating, discovering, installing, and packaging portable `SKILL.md` files. The universal format uses YAML frontmatter with required `name` and `description` fields followed by Markdown instructions.
 
+Documentation: https://gintingism.github.io/skillforge/
+
 ## Install
 
 ```powershell
@@ -47,4 +49,6 @@ The server exposes `skill://{name}` resources and read-only tools `search_skills
 ```powershell
 python -m pip install -e ".[dev]"
 python -m pytest
+python -m mypy src
+mkdocs build --strict
 ```

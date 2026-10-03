@@ -1,0 +1,21 @@
+site_name: SkillForge
+site_description: Portable SKILL.md registry, adapters, CLI, and MCP server.
+site_url: https://gintingism.github.io/skillforge/
+repo_url: https://github.com/gintingism/skillforge
+repo_name: gintingism/skillforge
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.sections
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - CLI: cli.md
+  - MCP server: mcp.md
+  - Architecture: architecture.md
+  - Contributing: contributing.md
+
+strict: true
