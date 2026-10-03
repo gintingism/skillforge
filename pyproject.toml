@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "skillforge"
+name = "agent-skillforge"
 version = "0.1.0"
 description = "Portable SKILL.md registry, adapters, CLI, and MCP server."
 readme = "README.md"

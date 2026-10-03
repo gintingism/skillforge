@@ -7,7 +7,7 @@ Documentation: https://gintingism.github.io/skillforge/
 ## Install
 
 ```powershell
-python -m pip install -e .
+python -m pip install agent-skillforge
 ```
 
 The CLI is exposed as `skillforge` (or `python -m skillforge.cli` in an environment configured for module execution).

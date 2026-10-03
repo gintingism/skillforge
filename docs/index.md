@@ -13,7 +13,7 @@ SkillForge manages portable `SKILL.md` files for AI coding assistants.
 ## Install
 
 ```powershell
-python -m pip install skillforge
+python -m pip install agent-skillforge
 ```
 
 For source development:
