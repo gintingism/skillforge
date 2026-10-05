@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 from typer.testing import CliRunner
 
@@ -32,6 +33,10 @@ def test_cli_validate_and_pack_report_errors(tmp_path: Path) -> None:
     missing = tmp_path / "missing.md"
     result = runner.invoke(app, ["validate", str(missing)])
     assert result.exit_code == 1
+
+    result = runner.invoke(app, ["validate", str(missing), "--json"])
+    assert result.exit_code == 1
+    assert result.stdout.startswith('{"valid": false')
     assert "Unable to read" in result.output
 
     result = runner.invoke(app, ["pack", str(missing), "--output", str(tmp_path / "out.zip")])
@@ -45,6 +50,22 @@ def test_cli_create_rejects_unsafe_name(tmp_path: Path) -> None:
     )
     assert result.exit_code == 1
     assert "safe" in result.output
+
+
+def test_cli_validate_json_success(tmp_path: Path) -> None:
+    skill_path = tmp_path / "SKILL.md"
+    skill_path.write_text(
+        "---\nname: demo\ndescription: A demo\n---\n\nBody\n",
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["validate", str(skill_path), "--json"])
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {
+        "valid": True,
+        "path": str(skill_path),
+        "name": "demo",
+        "description": "A demo",
+    }
 
 
 def test_cli_search_and_install(tmp_path: Path) -> None:

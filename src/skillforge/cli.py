@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import zipfile
 from pathlib import Path
 
@@ -24,14 +25,32 @@ def _registry(path: Path) -> Registry:
 
 
 @app.command()
-def validate(path: Path) -> None:
+def validate(
+    path: Path,
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+) -> None:
     """Validate a SKILL.md file."""
     try:
         skill = Skill.load(path)
     except SkillForgeError as exc:
-        typer.echo(str(exc), err=True)
+        if json_output:
+            typer.echo(json.dumps({"valid": False, "path": str(path), "error": str(exc)}))
+        else:
+            typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
-    typer.echo(f"Valid skill: {skill.name}")
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "valid": True,
+                    "path": str(path),
+                    "name": skill.name,
+                    "description": skill.description,
+                }
+            )
+        )
+    else:
+        typer.echo(f"Valid skill: {skill.name}")
 
 
 @app.command()

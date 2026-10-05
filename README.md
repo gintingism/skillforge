@@ -17,12 +17,15 @@ The CLI is exposed as `skillforge` (or `python -m skillforge.cli` in an environm
 ```powershell
 skillforge create code-review --description "Review code carefully" --directory .\skills\code-review
 skillforge validate .\skills\code-review\SKILL.md
+skillforge validate .\skills\code-review\SKILL.md --json
 skillforge pack .\skills\code-review --output .\code-review.zip
 skillforge search review --registry .\.skillforge
 skillforge install code-review --registry .\.skillforge --project .
 ```
 
 The local registry stores skills as `<registry>/<name>/SKILL.md`. The explicit built-in registry ships seven skills and acts as fallback after configured local skills. The registry interface is intentionally abstract so a GitHub-backed implementation can be added without changing CLI consumers. Installation detects `.github` for Copilot, `.claude` for Claude Code, and `.cursor` for Cursor. Copilot receives `.github/copilot-instructions.md`; Claude Code receives `.claude/skills/<name>/SKILL.md`; Cursor receives `.cursor/skills/<name>/SKILL.md`.
+
+`validate --json` emits machine-readable validation results without changing human-readable output or exit codes.
 
 ## MCP server
 
