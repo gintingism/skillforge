@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import zipfile
@@ -16,6 +17,14 @@ from .errors import SkillParseError, SkillValidationError
 _SAFE_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 
+def estimate_tokens(text: str) -> int:
+    """Estimate LLM token count using the standard ~4 chars/token heuristic."""
+    stripped = text.strip()
+    if not stripped:
+        return 0
+    return max(1, (len(stripped) + 3) // 4)
+
+
 @dataclass(frozen=True, slots=True)
 class Skill:
     """A portable skill with validated YAML metadata and Markdown content."""
@@ -27,6 +36,7 @@ class Skill:
     compatibility: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     allowed_tools: str | None = None
+    disable_model_invocation: bool = False
 
     def __post_init__(self) -> None:
         self.validate_name(self.name)
@@ -36,6 +46,23 @@ class Skill:
             raise SkillValidationError("Skill description exceeds maximum length of 1024 characters")
         if self.compatibility is not None and len(self.compatibility) > 500:
             raise SkillValidationError("Skill compatibility exceeds maximum length of 500 characters")
+
+    @property
+    def pointer_tokens(self) -> int:
+        """Startup context window token cost (0 when disable_model_invocation is True)."""
+        if self.disable_model_invocation:
+            return 0
+        return estimate_tokens(f"{self.name}: {self.description}")
+
+    @property
+    def body_tokens(self) -> int:
+        """On-demand token cost when the skill body is loaded into context."""
+        return estimate_tokens(self.body)
+
+    @property
+    def body_lines(self) -> int:
+        """Line count of the skill markdown body."""
+        return len(self.body.splitlines())
 
     @staticmethod
     def validate_name(name: str) -> None:
@@ -71,6 +98,8 @@ class Skill:
             meta_dict["compatibility"] = self.compatibility
         if self.allowed_tools:
             meta_dict["allowed-tools"] = self.allowed_tools
+        if self.disable_model_invocation:
+            meta_dict["disable-model-invocation"] = True
         if self.metadata:
             meta_dict["metadata"] = dict(self.metadata)
 
@@ -102,6 +131,9 @@ def parse_skill(document: str) -> Skill:
     license_val = raw_meta.get("license")
     compatibility_val = raw_meta.get("compatibility")
     allowed_tools = raw_meta.get("allowed-tools") or raw_meta.get("allowed_tools")
+    disable_model = raw_meta.get("disable-model-invocation")
+    if disable_model is None:
+        disable_model = raw_meta.get("disable_model_invocation", False)
     extra_metadata = raw_meta.get("metadata")
 
     return Skill(
@@ -112,6 +144,7 @@ def parse_skill(document: str) -> Skill:
         compatibility=str(compatibility_val) if compatibility_val is not None else None,
         metadata=dict(extra_metadata) if isinstance(extra_metadata, dict) else {},
         allowed_tools=str(allowed_tools) if allowed_tools is not None else None,
+        disable_model_invocation=bool(disable_model),
     )
 
 
@@ -124,6 +157,37 @@ class SkillPackage:
     references: dict[str, str] = field(default_factory=dict)
     assets: dict[str, bytes] = field(default_factory=dict)
     source_dir: Path | None = None
+
+    @property
+    def resource_tokens(self) -> int:
+        """Total estimated tokens across bundled scripts and references."""
+        total = 0
+        for content in self.scripts.values():
+            total += estimate_tokens(content)
+        for content in self.references.values():
+            total += estimate_tokens(content)
+        return total
+
+    @property
+    def total_tokens(self) -> int:
+        """Total estimated tokens across SKILL.md body and all bundled text resources."""
+        return self.skill.body_tokens + self.resource_tokens
+
+    def compute_sha256(self) -> str:
+        """Compute a deterministic SHA-256 hex digest of the entire skill package."""
+        hasher = hashlib.sha256()
+        hasher.update(b"SKILL.md\0")
+        hasher.update(self.skill.render().encode("utf-8"))
+        for rel_path, content in sorted(self.scripts.items()):
+            hasher.update(f"\0scripts/{rel_path}\0".encode("utf-8"))
+            hasher.update(content.encode("utf-8"))
+        for rel_path, content in sorted(self.references.items()):
+            hasher.update(f"\0references/{rel_path}\0".encode("utf-8"))
+            hasher.update(content.encode("utf-8"))
+        for rel_path, data in sorted(self.assets.items()):
+            hasher.update(f"\0assets/{rel_path}\0".encode("utf-8"))
+            hasher.update(data)
+        return hasher.hexdigest()
 
     @classmethod
     def load(cls, path: Path) -> "SkillPackage":

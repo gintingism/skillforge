@@ -2,6 +2,7 @@ from pathlib import Path
 
 from skillforge.adapters import ClaudeCodeAdapter, CopilotAdapter, CursorAdapter, detect_adapters
 from skillforge.registry import BuiltinRegistry, CompositeRegistry, LocalRegistry
+from skillforge.security import SkillAuditor
 
 
 def test_builtin_registry_lists_and_loads_all_builtin_skills() -> None:
@@ -24,15 +25,19 @@ def test_builtin_registry_lists_and_loads_all_builtin_skills() -> None:
         "zero-downtime-migration",
         "runtime-api-verification",
         "cognitive-loop-breaker",
+        "skill-architect",
+        "security-threat-modeler",
+        "performance-profiler",
     }
-    assert registry.get("caveman").description
-    assert registry.get("systematic-debugging").description
-    assert registry.get("antislop-code").description
-    assert registry.get("blast-radius-containment").description
-    assert registry.get("flaky-test-isolation").description
-    assert registry.get("zero-downtime-migration").description
-    assert registry.get("runtime-api-verification").description
-    assert registry.get("cognitive-loop-breaker").description
+    auditor = SkillAuditor()
+    for skill in skills:
+        pkg = registry.get_package(skill.name)
+        report = auditor.audit_package(pkg)
+        assert report.passed is True, f"{skill.name} failed audit: {report.findings}"
+        assert report.score == 100, f"{skill.name} had findings: {report.findings}"
+
+    architect_pkg = registry.get_package("skill-architect")
+    assert "mechanics.md" in architect_pkg.references
 
 
 def test_builtin_registry_install_writes_skill(tmp_path: Path) -> None:

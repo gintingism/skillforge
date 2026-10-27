@@ -5,7 +5,7 @@ SkillForge provides a CLI powered by Typer. Run `skillforge --help` to see all c
 ## Commands
 
 ### `skillforge add <spec>`
-Fetch, security-audit, and install a skill directly from a GitHub repository into your active project:
+Fetch, security-audit, and install a skill directly from a GitHub repository into your active project, recording its SHA-256 digest in `skillforge.lock`:
 ```bash
 skillforge add anthropics/skills:pdf
 skillforge add gintingism/skillforge:systematic-debugging
@@ -15,8 +15,23 @@ Options:
 - `-g, --global`: Install into user-level assistant configs.
 - `--skip-audit`: Skip security auditing before installation.
 
+### `skillforge sync`
+Deterministically install and verify all skills pinned in `skillforge.lock` (verifying SHA-256 integrity and security audit rules before installing):
+```bash
+skillforge sync
+skillforge sync --project ./my-repo
+```
+
+### `skillforge budget`
+Profile context window token usage across installed or built-in skills, separating always-loaded startup pointer tokens from on-demand `SKILL.md` body and disclosed resource tokens:
+```bash
+skillforge budget
+skillforge budget --builtin
+skillforge budget --json
+```
+
 ### `skillforge audit <path>`
-Scan a skill file or directory for prompt injections, zero-width unicode, and dangerous commands:
+Scan a skill file or directory for prompt injections, zero-width unicode, dangerous shell commands, broken `references/` or `scripts/` pointers, and progressive disclosure token limits:
 ```bash
 skillforge audit ./skills/my-skill
 skillforge audit ./skills/my-skill --strict

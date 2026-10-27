@@ -40,6 +40,9 @@ class AuditReport:
 
     target: str
     findings: list[AuditFinding] = field(default_factory=list)
+    pointer_tokens: int = 0
+    body_tokens: int = 0
+    body_lines: int = 0
 
     @property
     def passed(self) -> bool:
@@ -69,6 +72,9 @@ class AuditReport:
             "target": self.target,
             "passed": self.passed,
             "score": self.score,
+            "pointer_tokens": self.pointer_tokens,
+            "body_tokens": self.body_tokens,
+            "body_lines": self.body_lines,
             "findings_count": len(self.findings),
             "findings": [
                 {
@@ -89,6 +95,7 @@ class AuditReport:
         lines = [
             f"Audit Report: {self.target}",
             f"Status: {status} (Score: {self.score}/100)",
+            f"Context Load: {self.pointer_tokens} pointer tokens | {self.body_tokens} body tokens ({self.body_lines} lines)",
             f"Total Findings: {len(self.findings)}",
         ]
         if self.findings:
@@ -160,21 +167,24 @@ _CREDENTIAL_ACCESS_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 _TRIGGER_KEYWORDS = ("when", "use when", "for", "if", "trigger", "tasks")
+_MAX_BODY_LINES = 500
+_MAX_BODY_TOKENS = 5000
+_DISCLOSED_PATH_PATTERN = re.compile(
+    r"(?:`|\()(?:\./)?(scripts|references)/([a-zA-Z0-9_.-]+(?:/[a-zA-Z0-9_.-]+)*\.[a-zA-Z0-9]+)(?:`|\))"
+)
 
 
 class SkillAuditor:
     """Security and compliance auditor for SKILL.md and skill packages."""
 
-    def audit_package(self, package: SkillPackage) -> AuditReport:
+    def audit_package(self, package: SkillPackage, *, check_resources: bool = True) -> AuditReport:
         """Audit an entire skill package."""
         target_name = package.skill.name or (package.source_dir.name if package.source_dir else "unknown")
         findings: list[AuditFinding] = []
 
-        # Audit SKILL.md
         skill_text = package.skill.render()
         findings.extend(self._scan_text(skill_text, "SKILL.md"))
 
-        # Folder name match
         if package.source_dir and package.source_dir.name != package.skill.name:
             findings.append(
                 AuditFinding(
@@ -188,9 +198,10 @@ class SkillAuditor:
                 )
             )
 
-        # Trigger quality check
         desc_lower = package.skill.description.lower()
-        if not any(keyword in desc_lower for keyword in _TRIGGER_KEYWORDS):
+        if not package.skill.disable_model_invocation and not any(
+            keyword in desc_lower for keyword in _TRIGGER_KEYWORDS
+        ):
             findings.append(
                 AuditFinding(
                     rule_id="QUAL-001",
@@ -204,16 +215,68 @@ class SkillAuditor:
                 )
             )
 
-        # Audit scripts
+        if package.skill.body_lines > _MAX_BODY_LINES or package.skill.body_tokens > _MAX_BODY_TOKENS:
+            findings.append(
+                AuditFinding(
+                    rule_id="QUAL-003",
+                    severity=Severity.LOW,
+                    message=(
+                        f"SKILL.md body ({package.skill.body_lines} lines, ~{package.skill.body_tokens} tokens) "
+                        f"exceeds progressive disclosure budget ({_MAX_BODY_LINES} lines / {_MAX_BODY_TOKENS} tokens); "
+                        "extract detailed reference material into references/"
+                    ),
+                    file="SKILL.md",
+                )
+            )
+
+        if check_resources:
+            findings.extend(self._check_disclosed_paths(package))
+
         for rel_path, content in package.scripts.items():
             findings.extend(self._scan_text(content, f"scripts/{rel_path}"))
             findings.extend(self._scan_shell_content(content, f"scripts/{rel_path}"))
 
-        # Audit references
         for rel_path, content in package.references.items():
             findings.extend(self._scan_text(content, f"references/{rel_path}"))
 
-        return AuditReport(target=target_name, findings=findings)
+        return AuditReport(
+            target=target_name,
+            findings=findings,
+            pointer_tokens=package.skill.pointer_tokens,
+            body_tokens=package.skill.body_tokens,
+            body_lines=package.skill.body_lines,
+        )
+
+    def _check_disclosed_paths(self, package: SkillPackage) -> list[AuditFinding]:
+        """Verify that files referenced via progressive disclosure exist in the package."""
+        findings: list[AuditFinding] = []
+        seen: set[tuple[str, str]] = set()
+        for idx, line in enumerate(package.skill.body.splitlines(), start=1):
+            for match in _DISCLOSED_PATH_PATTERN.finditer(line):
+                folder, rel_path = match.group(1), match.group(2)
+                if (folder, rel_path) in seen:
+                    continue
+                seen.add((folder, rel_path))
+                exists = (
+                    rel_path in package.scripts
+                    if folder == "scripts"
+                    else rel_path in package.references
+                )
+                if not exists:
+                    findings.append(
+                        AuditFinding(
+                            rule_id="QUAL-004",
+                            severity=Severity.HIGH,
+                            message=(
+                                f"Broken progressive disclosure pointer: '{folder}/{rel_path}' "
+                                "is referenced in SKILL.md but missing from package"
+                            ),
+                            file="SKILL.md",
+                            line=idx,
+                            snippet=line.strip(),
+                        )
+                    )
+        return findings
 
     def audit_file_or_dir(self, path: Path) -> AuditReport:
         """Audit a file or directory from disk."""
@@ -224,7 +287,7 @@ class SkillAuditor:
         """Audit raw SKILL.md content without disk operations."""
         skill = parse_skill(content)
         package = SkillPackage(skill=skill)
-        return self.audit_package(package)
+        return self.audit_package(package, check_resources=False)
 
     def _scan_text(self, text: str, filename: str) -> list[AuditFinding]:
         """Scan general text for hidden unicode and prompt injections."""

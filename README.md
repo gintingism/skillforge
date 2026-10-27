@@ -37,11 +37,16 @@ skillforge add anthropics/skills:pdf
 skillforge add gintingism/skillforge:systematic-debugging
 ```
 
-SkillForge fetches the skill, runs a security check against it, installs it into your project's active assistant folders, and pins it in `skillforge.lock`.
+SkillForge fetches the skill, runs a security check against it, installs it into your project's active assistant folders, and pins its SHA-256 package digest in `skillforge.lock`.
+
+To install and verify all locked skills across a team checkout or CI environment:
+```bash
+skillforge sync
+```
 
 ### 2. Audit a skill before running it (`audit`)
 
-Before letting an agent read and execute a skill, inspect it for hidden payloads and prompt injection:
+Before letting an agent read and execute a skill, inspect it for hidden payloads, broken progressive disclosure links, and prompt injection:
 
 ```bash
 skillforge audit ./skills/my-new-skill
@@ -51,6 +56,7 @@ Example output:
 ```text
 Audit Report: my-new-skill
 Status: PASSED (Score: 100/100)
+Context Load: 24 pointer tokens | 280 body tokens (42 lines)
 Total Findings: 0
 ```
 
@@ -59,14 +65,33 @@ What the auditor scans for:
 - **Prompt Injections & Jailbreaks (SEC-002):** Directives like `"ignore previous instructions"`, `"system override"`, or attempts to disable safety guardrails.
 - **Dangerous Shell Commands (SEC-003):** Script patterns like `curl ... | bash`, base64-decoded execution, and outbound data exfiltration.
 - **Credential Path Access (SEC-004):** Unsanctioned attempts to access `~/.ssh`, `~/.aws/credentials`, or local environment secrets.
-- **Trigger Quality (QUAL-001):** Checks whether descriptions contain explicit activation conditions for progressive disclosure.
+- **Trigger Quality (QUAL-001):** Checks whether model-invoked descriptions contain explicit activation conditions (skipped when `disable-model-invocation: true`).
+- **Directory Alignment (QUAL-002):** Verifies the package folder name matches the skill `name` in YAML frontmatter.
+- **Progressive Disclosure Budget (QUAL-003):** Flags `SKILL.md` bodies exceeding 500 lines or ~5,000 tokens so heavy reference docs are moved into `references/`.
+- **Broken Disclosure Pointers (QUAL-004):** Verifies every `references/...` or `scripts/...` file cited in `SKILL.md` actually exists in the package.
 
 For CI pipelines, pass `--strict` to fail on any warning, or `--json` for automation:
 ```bash
 skillforge audit ./skills/my-new-skill --strict --json
 ```
 
-### 3. Check what's installed in your project (`list` & `remove`)
+### 3. Profile your project's context token budget (`budget`)
+
+Every model-invoked skill keeps its `name` and `description` in the startup context window on every turn. Measure how much context your skills consume before they even trigger:
+
+```bash
+skillforge budget
+# Or inspect the built-in catalog:
+skillforge budget --builtin
+```
+```text
+Context Budget Profile (19 skills)
+  Always-Loaded Startup Pointer Cost: ~912 tokens
+  On-Demand SKILL.md Body Cost:       ~5420 tokens
+  Disclosed Resources Cost:           ~245 tokens
+```
+
+### 4. Check what's installed in your project (`list` & `remove`)
 
 See which skills are active across your editor targets:
 
@@ -88,7 +113,7 @@ To remove a skill from all detected assistants and update your lockfile:
 skillforge remove antislop-code
 ```
 
-### 4. Create and package your own skills (`create` & `pack`)
+### 5. Create and package your own skills (`create` & `pack`)
 
 Scaffold a single skill file or a full directory package with scripts and reference docs:
 
@@ -131,10 +156,12 @@ skillforge install systematic-debugging --global
 
 ## Shipped Built-in Skills
 
-SkillForge ships with 16 practical engineering skills designed to counteract common agent failure modes identified in benchmark research (SWE-bench):
+SkillForge ships with 19 practical engineering skills designed to counteract common agent failure modes identified in benchmark research (SWE-bench):
 
-### Code Quality & Architectural Boundaries
+### Code Quality, Security & Performance
 - `blast-radius-containment`: Upstream reference tracing and a strict "file touch budget" before modifying shared code or public APIs.
+- `security-threat-modeler`: Trust-boundary mapping, IDOR/BOLA object-level authorization checks, SSRF validation, and injection sink verification.
+- `performance-profiler`: Baseline-first latency (`p50`/`p95`/`p99`), N+1 query detection, and algorithmic complexity verification before optimizing.
 - `antislop-code`: Comment hygiene and anti-overengineering filters (removes trivial narrative comments, stops speculative generality).
 - `spec-driven-development`: Schema-first API design and red-green verification loops before writing application logic.
 - `zero-downtime-migration`: Four-phase Expand-Contract pattern for non-breaking database schema and API payload evolutions.
@@ -146,6 +173,7 @@ SkillForge ships with 16 practical engineering skills designed to counteract com
 - `runtime-api-verification`: Interactive signature introspection (`inspect`, `dir()`, compiler definitions) to prevent hallucinated kwargs.
 
 ### Context Efficiency & Multi-Agent Operations
+- `skill-architect`: Multi-file progressive disclosure guide (bundled with `references/mechanics.md`) for authoring low-token `SKILL.md`, `AGENTS.md`, and `CLAUDE.md` files.
 - `caveman`: Terse, high-density technical communication mode that reduces token spend while preserving exact paths, commands, and errors.
 - `context-compactor`: Structured state distillation and active hypothesis ledgers for long-running agent threads nearing context limits.
 - `mcp-tool-designer`: Type-safe schema design, idempotent hints, token boundaries, and stderr error separation for MCP servers.
@@ -178,6 +206,7 @@ SkillForge can run as an MCP server so your agent can search, read, and audit sk
 Exposed MCP tools:
 - `search_skills(query, limit)`: Search local and built-in skill catalogs.
 - `get_skill(name)`: Read the full `SKILL.md` instructions.
+- `get_skill_resource(name, resource_path)`: Read disclosed `references/*` or `scripts/*` files from a skill package on demand.
 - `validate_skill(content)`: Test frontmatter syntax.
 - `audit_skill(content)`: Audit a raw skill document for prompt injections and malicious patterns.
 - `skill://{name}`: Resource URI for direct document retrieval.

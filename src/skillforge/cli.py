@@ -102,6 +102,12 @@ def create(
             "1. Step one instructions.\n"
             "2. Step two instructions.\n"
         )
+        if full:
+            instructions += (
+                "\n## Progressive Disclosure\n"
+                "- Deep reference: see `references/guide.md`\n"
+                "- Helper script: run `scripts/run.py`\n"
+            )
         skill = Skill(name=name, description=description, body=instructions)
         target.write_text(skill.render(), encoding="utf-8")
 
@@ -262,6 +268,7 @@ def add(
         lock_data[package.skill.name] = {
             "spec": spec,
             "version": package.skill.metadata.get("version", "unknown"),
+            "sha256": package.compute_sha256(),
         }
         lock_file.write_text(json.dumps(lock_data, indent=2), encoding="utf-8")
         typer.echo(f"Updated lockfile {lock_file}")
@@ -269,6 +276,163 @@ def add(
     except (SkillForgeError, OSError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
+
+
+@app.command()
+def sync(
+    project: Path = typer.Option(Path("."), "--project", "-p", help="Target project root containing skillforge.lock."),
+    registry: Path = typer.Option(Path(".skillforge"), "--registry", help="Local registry fallback path."),
+    global_install: bool = typer.Option(False, "--global", "-g", help="Install into global assistant configuration."),
+    skip_audit: bool = typer.Option(False, "--skip-audit", help="Skip security auditing before install."),
+) -> None:
+    """Install and verify all skills recorded in skillforge.lock."""
+    lock_file = project / "skillforge.lock"
+    if not lock_file.is_file():
+        typer.echo(f"Lockfile not found: {lock_file}", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        lock_data = json.loads(lock_file.read_text(encoding="utf-8"))
+    except Exception as exc:
+        typer.echo(f"Invalid skillforge.lock JSON: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if not isinstance(lock_data, dict) or not lock_data:
+        typer.echo("No skills listed in skillforge.lock.")
+        return
+
+    adapters = detect_adapters(project, global_scope=global_install)
+    if not adapters:
+        typer.echo("No supported assistant target detected.", err=True)
+        raise typer.Exit(code=1)
+
+    composite_reg = _registry(registry)
+    auditor = SkillAuditor()
+
+    try:
+        for skill_name, entry in sorted(lock_data.items()):
+            spec = str(entry.get("spec", skill_name)) if isinstance(entry, dict) else str(entry)
+            expected_sha = entry.get("sha256") if isinstance(entry, dict) else None
+
+            if spec.startswith("builtin:"):
+                package = BuiltinRegistry().get_package(spec.split(":", 1)[1])
+            elif "/" not in spec and ":" not in spec:
+                package = composite_reg.get_package(spec)
+            else:
+                package = GitRemoteRegistry().fetch_skill(spec)
+
+            actual_sha = package.compute_sha256()
+            if expected_sha and actual_sha != expected_sha:
+                typer.echo(
+                    f"Integrity verification FAILED for '{skill_name}': "
+                    f"expected sha256 {expected_sha}, got {actual_sha}",
+                    err=True,
+                )
+                raise typer.Exit(code=1)
+
+            if not skip_audit:
+                report = auditor.audit_package(package)
+                if not report.passed:
+                    typer.echo(f"Security audit FAILED for '{skill_name}':", err=True)
+                    typer.echo(report.render_text(), err=True)
+                    raise typer.Exit(code=1)
+
+            for adapter in adapters:
+                installed = adapter.install(package, project)
+                typer.echo(f"Synced {skill_name} -> {installed}")
+
+    except (SkillForgeError, OSError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command()
+def budget(
+    path: Path = typer.Option(Path("."), "--path", "-p", help="Project root or skill directory to profile."),
+    builtin: bool = typer.Option(False, "--builtin", help="Profile all built-in SkillForge skills."),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+) -> None:
+    """Measure startup pointer token load vs on-demand body token load across skills."""
+    packages: dict[str, SkillPackage] = {}
+    try:
+        if builtin:
+            reg = BuiltinRegistry()
+            for skill in reg.search(""):
+                packages[skill.name] = reg.get_package(skill.name)
+        elif path.is_file() or (path / "SKILL.md").is_file():
+            pkg = SkillPackage.load(path)
+            packages[pkg.skill.name] = pkg
+        else:
+            search_Roots = (
+                path / ".claude" / "skills",
+                path / ".cursor" / "skills",
+                path / ".gemini" / "config" / "skills",
+                path / ".windsurf" / "skills",
+                path / ".cline" / "skills",
+                path / "skills",
+                path / ".skillforge",
+            )
+            for root in search_Roots:
+                if root.is_dir():
+                    for skill_md in sorted(root.glob("*/SKILL.md")):
+                        pkg = SkillPackage.load(skill_md.parent)
+                        packages.setdefault(pkg.skill.name, pkg)
+    except (SkillForgeError, OSError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    items: list[dict[str, Any]] = []
+    total_pointer = 0
+    total_body = 0
+    total_resources = 0
+
+    for name, pkg in sorted(packages.items()):
+        p_tok = pkg.skill.pointer_tokens
+        b_tok = pkg.skill.body_tokens
+        r_tok = pkg.resource_tokens
+        over = pkg.skill.body_lines > 500 or b_tok > 5000
+        total_pointer += p_tok
+        total_body += b_tok
+        total_resources += r_tok
+        items.append(
+            {
+                "name": name,
+                "pointer_tokens": p_tok,
+                "body_tokens": b_tok,
+                "resource_tokens": r_tok,
+                "body_lines": pkg.skill.body_lines,
+                "disable_model_invocation": pkg.skill.disable_model_invocation,
+                "over_budget": over,
+            }
+        )
+
+    summary = {
+        "skills_count": len(items),
+        "startup_pointer_tokens": total_pointer,
+        "on_demand_body_tokens": total_body,
+        "disclosed_resource_tokens": total_resources,
+        "skills": items,
+    }
+
+    if json_output:
+        typer.echo(json.dumps(summary))
+        return
+
+    if not items:
+        typer.echo("No skills found to profile.")
+        return
+
+    typer.echo(f"Context Budget Profile ({len(items)} skills)")
+    typer.echo(f"  Always-Loaded Startup Pointer Cost: ~{total_pointer} tokens")
+    typer.echo(f"  On-Demand SKILL.md Body Cost:       ~{total_body} tokens")
+    typer.echo(f"  Disclosed Resources Cost:           ~{total_resources} tokens\n")
+    for item in items:
+        status = " [OVER BUDGET]" if item["over_budget"] else ""
+        typer.echo(
+            f"  - {item['name']:<28} pointer: {item['pointer_tokens']:>4} tok | "
+            f"body: {item['body_tokens']:>5} tok ({item['body_lines']:>3} lines) | "
+            f"resources: {item['resource_tokens']:>5} tok{status}"
+        )
 
 
 @app.command()

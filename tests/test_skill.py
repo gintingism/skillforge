@@ -64,3 +64,26 @@ def test_load_and_render_skill(tmp_path: Path) -> None:
     path.write_text("---\nname: demo\ndescription: Demo\n---\n\nBody\n", encoding="utf-8")
     skill = Skill.load(path)
     assert skill.render() == path.read_text(encoding="utf-8")
+
+
+def test_disable_model_invocation_and_sha256() -> None:
+    from skillforge.skill import SkillPackage
+
+    doc = (
+        "---\n"
+        "name: slash-only\n"
+        "description: Manual release command\n"
+        "disable-model-invocation: true\n"
+        "---\n\n"
+        "# Slash Only\n"
+    )
+    skill = parse_skill(doc)
+    assert skill.disable_model_invocation is True
+    assert skill.pointer_tokens == 0
+    assert "disable-model-invocation: true" in skill.render()
+
+    pkg1 = SkillPackage(skill=skill, references={"guide.md": "# Guide\n"})
+    pkg2 = SkillPackage(skill=skill, references={"guide.md": "# Guide\n"})
+    pkg3 = SkillPackage(skill=skill, references={"guide.md": "# Changed\n"})
+    assert pkg1.compute_sha256() == pkg2.compute_sha256()
+    assert pkg1.compute_sha256() != pkg3.compute_sha256()

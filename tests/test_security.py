@@ -62,3 +62,45 @@ def test_auditor_flags_missing_trigger_keyword() -> None:
     report = SkillAuditor().audit_package(SkillPackage(skill=skill))
     assert report.passed is True  # passed because only LOW finding
     assert any(f.rule_id == "QUAL-001" and f.severity == Severity.LOW for f in report.findings)
+
+
+def test_auditor_skips_trigger_check_when_model_invocation_disabled() -> None:
+    skill = Skill(
+        name="slash-cmd",
+        description="Run manual release script",
+        body="# Release\n",
+        disable_model_invocation=True,
+    )
+    report = SkillAuditor().audit_package(SkillPackage(skill=skill))
+    assert report.passed is True
+    assert report.score == 100
+    assert not any(f.rule_id == "QUAL-001" for f in report.findings)
+
+
+def test_auditor_flags_broken_progressive_disclosure_pointer() -> None:
+    skill = Skill(
+        name="broken-ref",
+        description="Use when testing progressive disclosure pointers",
+        body="# Guide\nRead `references/missing.md` for details.\n",
+    )
+    bad_report = SkillAuditor().audit_package(SkillPackage(skill=skill))
+    assert bad_report.passed is False
+    assert any(f.rule_id == "QUAL-004" and f.severity == Severity.HIGH for f in bad_report.findings)
+
+    good_report = SkillAuditor().audit_package(
+        SkillPackage(skill=skill, references={"missing.md": "# Details\n"})
+    )
+    assert good_report.passed is True
+    assert good_report.score == 100
+
+
+def test_auditor_flags_oversized_body() -> None:
+    oversized_body = "\n".join(f"Line {i}" for i in range(510))
+    skill = Skill(
+        name="sprawling-skill",
+        description="Use when testing body line budget limits",
+        body=oversized_body,
+    )
+    report = SkillAuditor().audit_package(SkillPackage(skill=skill))
+    assert report.passed is True
+    assert any(f.rule_id == "QUAL-003" and f.severity == Severity.LOW for f in report.findings)

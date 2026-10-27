@@ -177,3 +177,47 @@ def test_cli_install_without_detected_target_fails(tmp_path: Path) -> None:
     )
     assert result.exit_code == 1
     assert "No supported assistant target" in result.output
+
+
+def test_cli_budget_and_sync_commands(tmp_path: Path) -> None:
+    budget_res = runner.invoke(app, ["budget", "--builtin", "--json"])
+    assert budget_res.exit_code == 0, budget_res.output
+    data = json.loads(budget_res.stdout)
+    assert data["skills_count"] >= 19
+    assert data["startup_pointer_tokens"] > 0
+
+    project = tmp_path / "sync_project"
+    (project / ".claude").mkdir(parents=True)
+    lock_file = project / "skillforge.lock"
+    lock_file.write_text(
+        json.dumps(
+            {
+                "skill-architect": {
+                    "spec": "builtin:skill-architect",
+                    "version": "1.0.0",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    sync_res = runner.invoke(app, ["sync", "--project", str(project)])
+    assert sync_res.exit_code == 0, sync_res.output
+    assert (project / ".claude" / "skills" / "skill-architect" / "SKILL.md").exists()
+    assert (project / ".claude" / "skills" / "skill-architect" / "references" / "mechanics.md").exists()
+
+    # Tampered sha256 should fail sync
+    lock_file.write_text(
+        json.dumps(
+            {
+                "skill-architect": {
+                    "spec": "builtin:skill-architect",
+                    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    bad_sync = runner.invoke(app, ["sync", "--project", str(project)])
+    assert bad_sync.exit_code == 1
+    assert "Integrity verification FAILED" in bad_sync.output

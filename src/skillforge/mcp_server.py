@@ -65,6 +65,35 @@ def create_mcp_server(registry: Registry) -> MCPServer:
         except SkillForgeError as exc:
             return json.dumps({"error": str(exc)})
 
+    @server.tool(name="get_skill_resource", annotations=READ_ONLY)
+    def get_skill_resource(name: str, resource_path: str) -> str:
+        """Read a bundled progressive-disclosure file (e.g. 'references/guide.md' or 'scripts/run.py') from a skill package."""
+        try:
+            package = registry.get_package(name)
+            normalized = resource_path.strip().replace("\\", "/")
+            if ".." in normalized.split("/"):
+                return json.dumps({"error": "Invalid resource_path: path traversal is not allowed"})
+            clean_path = normalized.removeprefix("./").lstrip("/")
+            if clean_path.startswith("references/"):
+                rel = clean_path[len("references/") :]
+                if rel in package.references:
+                    content = package.references[rel]
+                    return content[:CHARACTER_LIMIT] if len(content) > CHARACTER_LIMIT else content
+            elif clean_path.startswith("scripts/"):
+                rel = clean_path[len("scripts/") :]
+                if rel in package.scripts:
+                    content = package.scripts[rel]
+                    return content[:CHARACTER_LIMIT] if len(content) > CHARACTER_LIMIT else content
+            return json.dumps(
+                {
+                    "error": f"Resource '{resource_path}' not found in skill '{name}'",
+                    "available_references": sorted(f"references/{k}" for k in package.references),
+                    "available_scripts": sorted(f"scripts/{k}" for k in package.scripts),
+                }
+            )
+        except SkillForgeError as exc:
+            return json.dumps({"error": str(exc)})
+
     @server.tool(name="validate_skill", annotations=READ_ONLY)
     def validate_skill(content: str) -> str:
         """Validate SKILL.md content without writing it to disk."""

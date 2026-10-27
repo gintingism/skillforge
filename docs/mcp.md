@@ -29,6 +29,7 @@ Packaged built-in skills remain available as a fallback. Local entries take prec
 ### Tools
 - `search_skills(query: str, limit: int = 50)`: Search names and descriptions across local and built-in registries.
 - `get_skill(name: str)`: Returns the complete `SKILL.md` content (bounded to 25,000 characters).
+- `get_skill_resource(name: str, resource_path: str)`: Reads a bundled progressive-disclosure file (such as `references/mechanics.md` or `scripts/run.py`) from a skill package on demand.
 - `validate_skill(content: str)`: Validates frontmatter and schema without disk writes.
 - `audit_skill(content: str)`: Audits raw skill content for prompt injections, zero-width unicode obfuscation, and dangerous shell patterns.
 
