@@ -1,20 +1,36 @@
 site_name: SkillForge
-site_description: Portable SKILL.md registry, adapters, CLI, and MCP server.
+site_description: Universal package manager, security auditor, and MCP server for portable agent skills (SKILL.md).
 site_url: https://gintingism.github.io/skillforge/
 repo_url: https://github.com/gintingism/skillforge
 repo_name: gintingism/skillforge
 
 theme:
   name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
   features:
     - navigation.instant
     - navigation.sections
+    - navigation.top
     - content.code.copy
 
 nav:
   - Home: index.md
-  - CLI: cli.md
-  - MCP server: mcp.md
+  - CLI Reference: cli.md
+  - Security Auditor: security.md
+  - Built-in Skills: skills.md
+  - MCP Server: mcp.md
   - Architecture: architecture.md
   - Contributing: contributing.md
 
