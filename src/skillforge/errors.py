@@ -19,3 +19,7 @@ class RegistryError(SkillForgeError):
 
 class AdapterError(SkillForgeError):
     """Raised when an adapter cannot install a skill."""
+
+
+class SecurityAuditError(SkillForgeError):
+    """Raised when a skill fails critical security verification."""

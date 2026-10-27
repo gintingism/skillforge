@@ -1,8 +1,8 @@
-# MCP server
+# MCP Server
 
-SkillForge uses the official Python MCP SDK and stdio transport.
+SkillForge uses the official Python MCP SDK with protocol-safe stdio transport.
 
-## Client configuration
+## Client Configuration
 
 ```json
 {
@@ -11,26 +11,25 @@ SkillForge uses the official Python MCP SDK and stdio transport.
       "command": "skillforge",
       "args": ["serve-mcp"],
       "env": {
-        "SKILLFORGE_REGISTRY_PATH": "C:\\path\\to\\.skillforge"
+        "SKILLFORGE_REGISTRY_PATH": ".skillforge"
       }
     }
   }
 }
 ```
 
-Set `SKILLFORGE_REGISTRY_PATH` to local registry root. Default is `.skillforge` in current working directory.
-Packaged built-in skills remain available as fallback. Local entries take precedence for duplicate names.
+If `SKILLFORGE_REGISTRY_PATH` is omitted, it defaults to `.skillforge` in the current working directory.
+Packaged built-in skills remain available as a fallback. Local entries take precedence for duplicate names.
 
 ## Exposed API
 
-Resource template:
+### Resources
+- `skill://{name}`: Reads a validated `SKILL.md` document.
 
-- `skill://{name}` reads one validated skill document.
+### Tools
+- `search_skills(query: str, limit: int = 50)`: Search names and descriptions across local and built-in registries.
+- `get_skill(name: str)`: Returns the complete `SKILL.md` content (bounded to 25,000 characters).
+- `validate_skill(content: str)`: Validates frontmatter and schema without disk writes.
+- `audit_skill(content: str)`: Audits raw skill content for prompt injections, zero-width unicode obfuscation, and dangerous shell patterns.
 
-Read-only tools:
-
-- `search_skills(query, limit)` searches name and description.
-- `get_skill(name)` returns complete `SKILL.md` content.
-- `validate_skill(content)` validates content without writing files.
-
-Protocol messages use stdout. Diagnostics use stderr. Search results are limited to 100 items. Skill documents are bounded to 25,000 characters.
+Protocol messages strictly use stdout; diagnostics and server logs stream to stderr.

@@ -1,19 +1,23 @@
 ---
 name: tavily-search
-description: Plan reliable web research with explicit queries, source checks, and citation boundaries.
+description: Execute targeted web research across high-trust primary sources, official documentation, and technical repositories. Use when researching cutting-edge library APIs, SDKs, or current industry standards.
+license: MIT
+compatibility: Python 3.10+
+metadata:
+  version: "1.1.0"
+  author: "SkillForge Team"
 ---
 
-# Tavily search
+# Targeted Technical Web Search
 
-This skill defines research behavior. It does not add a Tavily client or network integration.
+Conduct high-signal research across authoritative primary sources (GitHub, official docs, RFCs) while filtering out low-quality SEO scrapers.
 
-When a search tool exists:
+## Guidelines
 
-1. Write one focused query per question.
-2. Prefer primary sources and current documentation.
-3. Verify important claims against more than one source when practical.
-4. Record source title, URL, date, and claim supported.
-5. Separate sourced facts from inference.
-6. State when search access is unavailable.
-
-Never invent search results, citations, or API credentials.
+1. **Query Construction**:
+   - Use exact symbols, method names, and package specifiers.
+   - Target official domains where possible (`site:docs.python.org`, `site:github.com`).
+2. **Triangulation**:
+   - Cross-reference claims across at least two independent primary sources before advising the user.
+3. **Citation Quality**:
+   - Always cite exact URLs and timestamp context when reporting findings.

@@ -1,4 +1,4 @@
-"""MCP server exposing the local SkillForge registry."""
+"""MCP server exposing the SkillForge registry and security auditing tools."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from mcp.types import ToolAnnotations
 
 from .errors import SkillForgeError
 from .registry import BuiltinRegistry, CompositeRegistry, LocalRegistry, Registry
+from .security import SkillAuditor
 from .skill import parse_skill
 
 LOGGER = logging.getLogger("skillforge.mcp")
@@ -35,7 +36,7 @@ def create_mcp_server(registry: Registry) -> MCPServer:
     """Create an MCP server bound to a SkillForge registry."""
     server = MCPServer(
         "skillforge_mcp",
-        description="Discover, read, and validate portable SkillForge skills.",
+        description="Discover, read, validate, and security-audit portable SkillForge skills.",
     )
 
     @server.tool(name="search_skills", annotations=READ_ONLY)
@@ -72,6 +73,15 @@ def create_mcp_server(registry: Registry) -> MCPServer:
             return json.dumps({"valid": True, "name": skill.name, "description": skill.description})
         except SkillForgeError as exc:
             return json.dumps({"valid": False, "error": str(exc)})
+
+    @server.tool(name="audit_skill", annotations=READ_ONLY)
+    def audit_skill(content: str) -> str:
+        """Audit SKILL.md content for prompt injection, zero-width unicode, and security issues."""
+        try:
+            report = SkillAuditor().audit_content(content)
+            return json.dumps(report.to_dict())
+        except SkillForgeError as exc:
+            return json.dumps({"passed": False, "error": str(exc)})
 
     @server.resource("skill://{name}", mime_type="text/markdown")
     def skill_resource(name: str) -> str:

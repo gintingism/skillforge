@@ -20,7 +20,7 @@ def test_server_initialization_exposes_tools_and_resource(tmp_path: Path) -> Non
     server = create_mcp_server(make_registry(tmp_path))
     tools = asyncio.run(server.list_tools())
     resources = asyncio.run(server.list_resource_templates())
-    assert {tool.name for tool in tools} == {"search_skills", "get_skill", "validate_skill"}
+    assert {tool.name for tool in tools} == {"search_skills", "get_skill", "validate_skill", "audit_skill"}
     assert all(tool.annotations is not None and tool.annotations.read_only_hint is True for tool in tools)
     assert any(resource.uri_template == "skill://{name}" for resource in resources)
 
@@ -33,6 +33,8 @@ def test_mcp_tool_behavior_and_resource(tmp_path: Path) -> None:
     assert "A demo skill" in fetched.content[0].text
     validated = asyncio.run(server.call_tool("validate_skill", {"content": Skill("demo", "A demo", "").render()}))
     assert '"valid": true' in validated.content[0].text
+    audited = asyncio.run(server.call_tool("audit_skill", {"content": Skill("demo", "A demo skill when needed", "").render()}))
+    assert '"passed": true' in audited.content[0].text
     content = asyncio.run(server.read_resource("skill://demo"))
     assert "name: demo" in content[0].content
 

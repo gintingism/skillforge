@@ -1,33 +1,26 @@
-# SkillForge
+# SkillForge Documentation
 
-SkillForge manages portable `SKILL.md` files for AI coding assistants.
+SkillForge is a package manager, security auditor, and MCP server for portable agent skills (`SKILL.md`).
 
-## What it provides
+## What it does
 
-- Universal YAML-frontmatter skill model.
-- Local registry with future registry backends.
-- Copilot and Claude installation adapters.
-- CLI commands for create, validate, search, install, and pack.
-- MCP server exposing read-only skill resources and tools.
+- **Portable Format:** Follows the open `SKILL.md` specification from the Agentic AI Foundation (AAIF), supporting directory packages with `scripts/`, `references/`, and `assets/`.
+- **Remote Git Registry:** Install skills directly from GitHub repositories with `skillforge add owner/repo:skill`.
+- **Security Auditor:** Scan skills for prompt injections, hidden zero-width unicode, and dangerous shell exfiltration with `skillforge audit`.
+- **Multi-Assistant Adapters:** Installs skills automatically into Google Antigravity, Claude Code, Cursor, Windsurf, Cline, universal `AGENTS.md`, and GitHub Copilot.
+- **Built-in Skills:** Ships 11 production-grade engineering workflows without fluff.
+- **MCP Server:** Exposes skills and security scanning to any MCP-compatible client.
 
-## Install
+## Quick Installation
 
-```powershell
-python -m pip install agent-skillforge
+```bash
+pip install agent-skillforge
 ```
 
-For source development:
+For local development:
 
-```powershell
-python -m pip install -e ".[dev,docs]"
+```bash
+pip install -e ".[dev,docs]"
 ```
 
-## First skill
-
-```powershell
-skillforge create code-review --description "Review code carefully" --directory .\skills\code-review
-skillforge validate .\skills\code-review\SKILL.md
-skillforge pack .\skills\code-review --output .\code-review.zip
-```
-
-See [CLI](cli.md) for all commands and [MCP server](mcp.md) for client setup.
+See [CLI Reference](cli.md) for available commands and [MCP Server](mcp.md) for client configuration.

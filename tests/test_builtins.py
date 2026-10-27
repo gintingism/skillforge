@@ -15,8 +15,24 @@ def test_builtin_registry_lists_and_loads_all_builtin_skills() -> None:
         "spec-driven-development",
         "agent-observability",
         "human-in-the-loop",
+        "systematic-debugging",
+        "antislop-code",
+        "mcp-tool-designer",
+        "context-compactor",
+        "blast-radius-containment",
+        "flaky-test-isolation",
+        "zero-downtime-migration",
+        "runtime-api-verification",
+        "cognitive-loop-breaker",
     }
     assert registry.get("caveman").description
+    assert registry.get("systematic-debugging").description
+    assert registry.get("antislop-code").description
+    assert registry.get("blast-radius-containment").description
+    assert registry.get("flaky-test-isolation").description
+    assert registry.get("zero-downtime-migration").description
+    assert registry.get("runtime-api-verification").description
+    assert registry.get("cognitive-loop-breaker").description
 
 
 def test_builtin_registry_install_writes_skill(tmp_path: Path) -> None:

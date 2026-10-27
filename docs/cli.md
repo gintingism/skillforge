@@ -1,37 +1,71 @@
-# CLI
+# CLI Reference
 
-SkillForge uses Typer. Run `skillforge --help` for command discovery.
+SkillForge provides a CLI powered by Typer. Run `skillforge --help` to see all commands.
 
-## Create and validate
+## Commands
 
-```powershell
-skillforge create code-review --description "Review code carefully" --directory .\skills\code-review
-skillforge validate .\skills\code-review\SKILL.md
-skillforge validate .\skills\code-review\SKILL.md --json
+### `skillforge add <spec>`
+Fetch, security-audit, and install a skill directly from a GitHub repository into your active project:
+```bash
+skillforge add anthropics/skills:pdf
+skillforge add gintingism/skillforge:systematic-debugging
+```
+Options:
+- `-p, --project PATH`: Target project root (defaults to `.`).
+- `-g, --global`: Install into user-level assistant configs.
+- `--skip-audit`: Skip security auditing before installation.
+
+### `skillforge audit <path>`
+Scan a skill file or directory for prompt injections, zero-width unicode, and dangerous commands:
+```bash
+skillforge audit ./skills/my-skill
+skillforge audit ./skills/my-skill --strict
+skillforge audit ./skills/my-skill --json
 ```
 
-Names must be safe filesystem path segments: lowercase letters, numbers, `-`, and `_`.
-Use `--json` for automation. Success emits `valid`, `path`, `name`, and `description`; failure emits `valid`, `path`, and `error`. Human-readable output and exit codes stay unchanged.
-
-## Local registry
-
-Local registry layout:
-
-```text
-.skillforge/
-└── code-review/
-    └── SKILL.md
+### `skillforge list`
+List all installed skills across detected assistants:
+```bash
+skillforge list
+skillforge list --global
 ```
 
-```powershell
-skillforge search review --registry .\.skillforge
-skillforge install code-review --registry .\.skillforge --project .
+### `skillforge remove <name>`
+Remove an installed skill from all detected assistants and update `skillforge.lock`:
+```bash
+skillforge remove my-skill
 ```
 
-Built-in skills ship with SkillForge. Local registry entries override built-ins with the same name. Search and install use both sources explicitly.
+### `skillforge create <name>`
+Create a new skill file or modular directory structure:
+```bash
+skillforge create code-review -d "Review code carefully. Use when auditing PRs."
+skillforge create full-tool -d "Complete tool. Use when automating workflows." --full
+```
 
-## Package
+### `skillforge validate <path>`
+Validate a `SKILL.md` file against schema standards:
+```bash
+skillforge validate ./skills/my-skill/SKILL.md
+skillforge validate ./skills/my-skill/SKILL.md --json
+```
 
-```powershell
-skillforge pack .\skills\code-review --output .\code-review.zip
+### `skillforge pack <path>` / `skillforge unpack <archive>`
+Package a skill directory into a zip file or safely unpack one:
+```bash
+skillforge pack ./skills/my-skill --output ./my-skill.zip
+skillforge unpack ./my-skill.zip --output ./skills
+```
+
+### `skillforge search <query>`
+Search for skills across local and built-in registries:
+```bash
+skillforge search debugging
+```
+
+### `skillforge install <name>`
+Install a local or built-in skill into detected assistant targets:
+```bash
+skillforge install systematic-debugging
+skillforge install systematic-debugging --global
 ```
