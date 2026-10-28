@@ -207,25 +207,48 @@ class GitRemoteRegistry(Registry):
     @classmethod
     def parse_spec(cls, spec: str) -> tuple[str, str | None]:
         """Parse 'owner/repo:skill_name' or Git URL into (repo_url, skill_name)."""
+        repo_url, skill_name, _ = cls.parse_spec_with_ref(spec)
+        return repo_url, skill_name
+
+    @classmethod
+    def parse_spec_with_ref(cls, spec: str) -> tuple[str, str | None, str | None]:
+        """Parse 'owner/repo:skill_name@ref' or Git URL into (repo_url, skill_name, ref)."""
         clean = spec.strip()
+        ref: str | None = None
         has_scheme = clean.startswith(("http://", "https://", "git@", "ssh://"))
+
+        # Extract @ref if present and not a git@ user separator
+        if "@" in clean and not (has_scheme and clean.startswith("git@") and clean.count("@") == 1):
+            base, ref_part = clean.rsplit("@", 1)
+            if ":" in ref_part:
+                # e.g. owner/repo@v1.0.0:skill
+                ref_extracted, skill_part = ref_part.split(":", 1)
+                clean = f"{base}:{skill_part}"
+                ref = ref_extracted
+            else:
+                # e.g. owner/repo:skill@v1.0.0 or owner/repo@v1.0.0
+                clean = base
+                ref = ref_part
+            if ref:
+                cls._check_git_ref(ref)
+
         if ":" in clean and not has_scheme:
             repo_part, skill_part = clean.split(":", 1)
             cls._check_shorthand(repo_part, skill_part)
-            return f"https://github.com/{repo_part}.git", skill_part
+            return f"https://github.com/{repo_part}.git", skill_part, ref
         if has_scheme and clean.count(":") > 1 and not clean.startswith("git@"):
             # Handles https://github.com/owner/repo.git:skill_name
             repo_part, skill_part = clean.rsplit(":", 1)
             if skill_part.isdigit() or "/" in skill_part:
-                return clean, None
+                return clean, None, ref
             if not cls._SKILL_NAME.fullmatch(skill_part):
                 raise RegistryError(f"Invalid skill name in spec: {skill_part!r}")
-            return repo_part, skill_part
+            return repo_part, skill_part, ref
         if "/" in clean and not has_scheme:
             # Handles owner/repo (whole repo as skill or collection)
             cls._check_shorthand(clean, None)
-            return f"https://github.com/{clean}.git", None
-        return clean, None
+            return f"https://github.com/{clean}.git", None, ref
+        return clean, None, ref
 
     @classmethod
     def _check_shorthand(cls, repo_part: str, skill_part: str | None) -> None:
@@ -236,8 +259,16 @@ class GitRemoteRegistry(Registry):
         if skill_part is not None and not cls._SKILL_NAME.fullmatch(skill_part):
             raise RegistryError(f"Invalid skill name in spec: {skill_part!r}")
 
-    def _clone_or_update(self, repo_url: str) -> Path:
-        """Clone or update repository into local cache directory."""
+    @staticmethod
+    def _check_git_ref(ref: str) -> None:
+        """Validate git ref or commit SHA to block option injection and malformed refs."""
+        if not ref or ref.startswith("-"):
+            raise RegistryError(f"Invalid or unsafe git ref: {ref!r}")
+        if not re.fullmatch(r"^[A-Za-z0-9_./@~^+-]{1,128}$", ref):
+            raise RegistryError(f"Invalid git ref characters: {ref!r}")
+
+    def _clone_or_update(self, repo_url: str, ref: str | None = None) -> tuple[Path, str]:
+        """Clone or update repository into local cache directory and return (path, commit_sha)."""
         self._check_repo_url(repo_url)
         sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", repo_url)
         target = self.cache_dir / sanitized
@@ -245,27 +276,52 @@ class GitRemoteRegistry(Registry):
         if (target / ".git").is_dir():
             try:
                 subprocess.run(
-                    ["git", "pull", "--ff-only"],
+                    ["git", "fetch", "--all", "--tags", "--prune"],
                     cwd=target,
                     check=True,
                     capture_output=True,
                     text=True,
                 )
             except Exception:
-                # If pull fails (e.g. offline), use existing cache
                 pass
-            return target
+        else:
+            try:
+                subprocess.run(
+                    ["git", "clone", "--", repo_url, str(target)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except Exception as exc:
+                raise RegistryError(f"Failed to clone remote repository {repo_url}: {exc}") from exc
 
+        if ref:
+            self._check_git_ref(ref)
+            try:
+                subprocess.run(
+                    ["git", "checkout", "--detach", ref],
+                    cwd=target,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except Exception as exc:
+                raise RegistryError(f"Failed to checkout ref {ref!r} in {repo_url}: {exc}") from exc
+
+        commit_sha = ""
         try:
-            subprocess.run(
-                ["git", "clone", "--depth", "1", "--", repo_url, str(target)],
+            head_res = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=target,
                 check=True,
                 capture_output=True,
                 text=True,
             )
-            return target
-        except Exception as exc:
-            raise RegistryError(f"Failed to clone remote repository {repo_url}: {exc}") from exc
+            commit_sha = head_res.stdout.strip()
+        except Exception:
+            pass
+
+        return target, commit_sha
 
     @staticmethod
     def _check_repo_url(repo_url: str) -> None:
@@ -280,11 +336,13 @@ class GitRemoteRegistry(Registry):
                 f"Unsupported repository URL {repo_url!r}: use owner/repo, an https:// URL, or git@host:path"
             )
 
-    def fetch_skill(self, spec: str) -> SkillPackage:
+    def fetch_skill(self, spec: str, commit: str | None = None) -> SkillPackage:
         """Resolve a remote spec like 'owner/repo:skill' into a SkillPackage."""
-        repo_url, skill_name = self.parse_spec(spec)
-        repo_dir = self._clone_or_update(repo_url)
+        repo_url, skill_name, spec_ref = self.parse_spec_with_ref(spec)
+        target_ref = commit or spec_ref
+        repo_dir, head_commit = self._clone_or_update(repo_url, ref=target_ref)
 
+        package: SkillPackage | None = None
         # 1. If skill_name is given, look specifically for that folder or file
         if skill_name:
             candidates = [
@@ -295,25 +353,33 @@ class GitRemoteRegistry(Registry):
             ]
             for candidate in candidates:
                 if candidate.is_dir() and (candidate / "SKILL.md").is_file():
-                    return SkillPackage.load(candidate)
-            # Scan recursively
-            for match in repo_dir.rglob(f"**/{skill_name}/SKILL.md"):
-                if match.is_file():
-                    return SkillPackage.load(match.parent)
-            raise RegistryError(f"Skill '{skill_name}' not found in repository {repo_url}")
+                    package = SkillPackage.load(candidate)
+                    break
+            if package is None:
+                # Scan recursively
+                for match in repo_dir.rglob(f"**/{skill_name}/SKILL.md"):
+                    if match.is_file():
+                        package = SkillPackage.load(match.parent)
+                        break
+            if package is None:
+                raise RegistryError(f"Skill '{skill_name}' not found in repository {repo_url}")
 
         # 2. Check if the repo root is itself a skill
-        if (repo_dir / "SKILL.md").is_file():
-            return SkillPackage.load(repo_dir)
+        elif (repo_dir / "SKILL.md").is_file():
+            package = SkillPackage.load(repo_dir)
 
         # 3. Check if there are skills in skills/
-        skills_dir = repo_dir / "skills"
-        if skills_dir.is_dir():
-            for child in skills_dir.iterdir():
+        elif (repo_dir / "skills").is_dir():
+            for child in (repo_dir / "skills").iterdir():
                 if child.is_dir() and (child / "SKILL.md").is_file():
-                    return SkillPackage.load(child)
+                    package = SkillPackage.load(child)
+                    break
 
-        raise RegistryError(f"No valid skill found in {repo_url}")
+        if package is None:
+            raise RegistryError(f"No valid skill found in {repo_url}")
+
+        package.commit_sha = head_commit or None
+        return package
 
     def get(self, name: str) -> Skill:
         """Fetch remote skill by spec and return its Skill object."""

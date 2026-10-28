@@ -117,7 +117,25 @@ Context Budget Profile (22 skills)
 
 Token counts are estimates (about 4 characters per token), so treat them as relative sizes, not exact billing numbers.
 
-### 6. Check what's installed in your project (`list` & `remove`)
+### 6. Verify skill integrity and detect drift (`verify`)
+
+Check installed skills against `skillforge.lock` in CI/CD or local environments without modifying files or making network requests. Detects file tampering, missing dependencies, or unmanaged skills:
+
+```bash
+# Verify active project
+skillforge verify
+
+# Output JSON for CI automation
+skillforge verify --json
+```
+```text
+  OK       clean-code (sha256: 4f3a9e1208bc...)
+  OK       systematic-debugging (sha256: 8a91bc7d01fe...)
+
+Verification PASSED: 2 skill(s) match skillforge.lock.
+```
+
+### 7. Check what's installed in your project (`list` & `remove`)
 
 See which skills are active across your editor targets:
 
@@ -139,7 +157,7 @@ To remove a skill from all detected assistants and update your lockfile:
 skillforge remove antislop-code
 ```
 
-### 5. Create and package your own skills (`create` & `pack`)
+### 8. Create and package your own skills (`create` & `pack`)
 
 Scaffold a single skill file or a full directory package with scripts and reference docs:
 

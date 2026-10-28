@@ -157,6 +157,7 @@ class SkillPackage:
     references: dict[str, str] = field(default_factory=dict)
     assets: dict[str, bytes] = field(default_factory=dict)
     source_dir: Path | None = None
+    commit_sha: str | None = None
 
     @property
     def resource_tokens(self) -> int:

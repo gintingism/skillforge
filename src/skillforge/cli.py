@@ -270,6 +270,7 @@ def add(
             "spec": spec,
             "version": package.skill.metadata.get("version", "unknown"),
             "sha256": package.compute_sha256(),
+            "commit": package.commit_sha,
         }
         lock_file.write_text(json.dumps(lock_data, indent=2), encoding="utf-8")
         typer.echo(f"Updated lockfile {lock_file}")
@@ -314,13 +315,14 @@ def sync(
         for skill_name, entry in sorted(lock_data.items()):
             spec = str(entry.get("spec", skill_name)) if isinstance(entry, dict) else str(entry)
             expected_sha = entry.get("sha256") if isinstance(entry, dict) else None
+            pinned_commit = entry.get("commit") if isinstance(entry, dict) else None
 
             if spec.startswith("builtin:"):
                 package = BuiltinRegistry().get_package(spec.split(":", 1)[1])
             elif "/" not in spec and ":" not in spec:
                 package = composite_reg.get_package(spec)
             else:
-                package = GitRemoteRegistry().fetch_skill(spec)
+                package = GitRemoteRegistry().fetch_skill(spec, commit=pinned_commit)
 
             actual_sha = package.compute_sha256()
             if expected_sha and actual_sha != expected_sha:
@@ -345,6 +347,93 @@ def sync(
     except (SkillForgeError, OSError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
+
+
+@app.command()
+def verify(
+    project: Path = typer.Option(Path("."), "--project", "-p", help="Target project root containing skillforge.lock."),
+    global_scope: bool = typer.Option(False, "--global", "-g", help="Verify global assistant configuration."),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+) -> None:
+    """Verify integrity of installed skills against skillforge.lock without modifying files."""
+    lock_file = project / "skillforge.lock"
+    if not lock_file.is_file():
+        typer.echo(f"Lockfile not found: {lock_file}", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        lock_data = json.loads(lock_file.read_text(encoding="utf-8"))
+    except Exception as exc:
+        typer.echo(f"Invalid skillforge.lock JSON: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if not isinstance(lock_data, dict) or not lock_data:
+        typer.echo("Lockfile is empty.")
+        return
+
+    packages = _discover_packages(project, global_scope=global_scope)
+    results: list[dict[str, Any]] = []
+    has_error = False
+
+    for skill_name, entry in sorted(lock_data.items()):
+        expected_sha = entry.get("sha256") if isinstance(entry, dict) else None
+        pkg = packages.get(skill_name)
+
+        if pkg is None:
+            has_error = True
+            results.append({
+                "skill": skill_name,
+                "status": "MISSING",
+                "message": "Skill recorded in lockfile is not installed in any detected environment.",
+            })
+            continue
+
+        actual_sha = pkg.compute_sha256()
+        if expected_sha and actual_sha != expected_sha:
+            has_error = True
+            results.append({
+                "skill": skill_name,
+                "status": "DRIFT",
+                "message": f"Integrity drift: expected {expected_sha[:12]}..., found {actual_sha[:12]}...",
+                "expected_sha256": expected_sha,
+                "actual_sha256": actual_sha,
+            })
+        else:
+            results.append({
+                "skill": skill_name,
+                "status": "VERIFIED",
+                "sha256": actual_sha,
+            })
+
+    unmanaged = [name for name in sorted(packages) if name not in lock_data]
+
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "status": "FAILED" if has_error else "PASSED",
+                    "results": results,
+                    "unmanaged_skills": unmanaged,
+                },
+                indent=2,
+            )
+        )
+    else:
+        for r in results:
+            st = r["status"]
+            if st == "VERIFIED":
+                typer.echo(f"  OK       {r['skill']} (sha256: {r['sha256'][:16]}...)")
+            elif st == "DRIFT":
+                typer.echo(f"  DRIFT    {r['skill']} - {r['message']}", err=True)
+            elif st == "MISSING":
+                typer.echo(f"  MISSING  {r['skill']} - {r['message']}", err=True)
+        if unmanaged:
+            typer.echo(f"\nUnmanaged skills installed (not in lockfile): {', '.join(unmanaged)}")
+
+        if has_error:
+            typer.echo("\nVerification FAILED: integrity drift or missing skills detected.", err=True)
+            raise typer.Exit(code=1)
+        typer.echo(f"\nVerification PASSED: {len(results)} skill(s) match skillforge.lock.")
 
 
 def _discover_packages(
@@ -395,6 +484,7 @@ def _discover_packages(
     search_roots = (
         target / ".claude" / "skills",
         target / ".cursor" / "skills",
+        target / ".gemini" / "skills",
         target / ".gemini" / "config" / "skills",
         target / ".windsurf" / "skills",
         target / ".cline" / "skills",
