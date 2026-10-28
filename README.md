@@ -62,20 +62,44 @@ Total Findings: 0
 
 What the auditor scans for:
 - **Invisible Unicode (SEC-001):** Zero-width spaces (`\u200B`, `\uFEFF`), homoglyphs, and directional overrides used to hide prompt instructions from human code review.
-- **Prompt Injections & Jailbreaks (SEC-002):** Directives like `"ignore previous instructions"`, `"system override"`, or attempts to disable safety guardrails.
+- **Prompt Injections & Jailbreaks (SEC-002):** Directives like `"ignore previous instructions"`, `"system override"`, or attempts to disable safety guardrails (with smart context filters for defensive guides).
 - **Dangerous Shell Commands (SEC-003):** Script patterns like `curl ... | bash`, base64-decoded execution, and outbound data exfiltration.
 - **Credential Path Access (SEC-004):** Unsanctioned attempts to access `~/.ssh`, `~/.aws/credentials`, or local environment secrets.
+- **Data & Environment Exfiltration (SEC-005):** Sending environment variables or secrets to external webhook endpoints (`webhook.site`, `pipedream.net`).
+- **Hardcoded Secrets & API Keys (SEC-006):** Detects hardcoded GitHub tokens, Anthropic API keys, Google Cloud keys, and AWS credentials.
 - **Trigger Quality (QUAL-001):** Checks whether model-invoked descriptions contain explicit activation conditions (skipped when `disable-model-invocation: true`).
 - **Directory Alignment (QUAL-002):** Verifies the package folder name matches the skill `name` in YAML frontmatter.
 - **Progressive Disclosure Budget (QUAL-003):** Flags `SKILL.md` bodies exceeding 500 lines or ~5,000 tokens so heavy reference docs are moved into `references/`.
 - **Broken Disclosure Pointers (QUAL-004):** Verifies every `references/...` or `scripts/...` file cited in `SKILL.md` actually exists in the package.
+- **Applicability Hijacking (QUAL-006):** Flags overbroad trigger descriptions that claim all tasks (metadata poisoning).
 
 For CI pipelines, pass `--strict` to fail on any warning, or `--json` for automation:
 ```bash
 skillforge audit ./skills/my-new-skill --strict --json
 ```
 
-### 3. Profile your project's context token budget (`budget`)
+### 3. Run a full environment diagnostic (`doctor`)
+
+Inspect all installed skills across your project or global workstation (Claude Code, Cursor, Antigravity, Windsurf) for security vulnerabilities, context window load, and broken pointers:
+
+```bash
+# Diagnose active project
+skillforge doctor
+
+# Diagnose all global machine skills
+skillforge doctor --global
+```
+
+### 4. Compare changes before updating (`diff`)
+
+Inspect diffs between local skills and upstream repositories, or compare two skill versions:
+
+```bash
+skillforge diff ./skills/my-skill
+skillforge diff my-skill gintingism/skillforge:my-skill
+```
+
+### 5. Profile your project's context token budget (`budget`)
 
 Every model-invoked skill keeps its `name` and `description` in the startup context window on every turn. Measure how much context your skills consume before they even trigger:
 
@@ -85,13 +109,13 @@ skillforge budget
 skillforge budget --builtin
 ```
 ```text
-Context Budget Profile (19 skills)
-  Always-Loaded Startup Pointer Cost: ~912 tokens
-  On-Demand SKILL.md Body Cost:       ~5420 tokens
-  Disclosed Resources Cost:           ~245 tokens
+Context Budget Profile (22 skills)
+  Always-Loaded Startup Pointer Cost: ~1280 tokens
+  On-Demand SKILL.md Body Cost:       ~7450 tokens
+  Disclosed Resources Cost:           ~349 tokens
 ```
 
-### 4. Check what's installed in your project (`list` & `remove`)
+### 6. Check what's installed in your project (`list` & `remove`)
 
 See which skills are active across your editor targets:
 
@@ -156,9 +180,12 @@ skillforge install systematic-debugging --global
 
 ## Shipped Built-in Skills
 
-SkillForge ships with 19 practical engineering skills designed to counteract common agent failure modes identified in benchmark research (SWE-bench):
+SkillForge ships with 22 practical engineering skills designed to counteract common agent failure modes identified in benchmark research (SWE-bench, Snyk ToxicSkills, Skill-Inject):
 
 ### Code Quality, Security & Performance
+- `supply-chain-sentinel`: Verify package existence, registry age, and run CVE audits (`pip-audit`, `npm audit`) before adding dependencies.
+- `secret-sanitizer`: Pre-commit git diff auditor that prevents API keys, private tokens, and `.env` credentials from leaking.
+- `contract-test-generator`: Property-based testing and contract boundary fuzz tests (Hypothesis, fast-check) to verify algebraic invariants.
 - `blast-radius-containment`: Upstream reference tracing and a strict "file touch budget" before modifying shared code or public APIs.
 - `security-threat-modeler`: Trust-boundary mapping, IDOR/BOLA object-level authorization checks, SSRF validation, and injection sink verification.
 - `performance-profiler`: Baseline-first latency (`p50`/`p95`/`p99`), N+1 query detection, and algorithmic complexity verification before optimizing.

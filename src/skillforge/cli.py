@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import json
 import logging
 import zipfile
@@ -14,7 +15,7 @@ from .adapters import detect_adapters
 from .errors import SecurityAuditError, SkillForgeError
 from .mcp_server import run_mcp_server
 from .registry import BuiltinRegistry, CompositeRegistry, GitRemoteRegistry, LocalRegistry, Registry
-from .security import SkillAuditor, audit_path
+from .security import Severity, SkillAuditor, audit_path
 from .skill import Skill, SkillPackage
 
 app = typer.Typer(help="Universal package manager, security auditor, and MCP server for portable agent skills.")
@@ -346,6 +347,73 @@ def sync(
         raise typer.Exit(code=1) from exc
 
 
+def _discover_packages(
+    path: Path | None = None,
+    global_scope: bool = False,
+    builtin: bool = False,
+) -> dict[str, SkillPackage]:
+    """Discover installed or packaged skills across assistant layouts."""
+    packages: dict[str, SkillPackage] = {}
+    if builtin:
+        reg = BuiltinRegistry()
+        for skill in reg.search(""):
+            packages[skill.name] = reg.get_package(skill.name)
+        return packages
+
+    if global_scope:
+        global_roots = (
+            Path.home() / ".gemini" / "config" / "skills",
+            Path.home() / ".claude" / "skills",
+            Path.home() / ".cursor" / "skills",
+            Path.home() / ".agents" / "skills",
+        )
+        for root in global_roots:
+            if root.is_dir():
+                for skill_md in sorted(root.glob("*/SKILL.md")):
+                    try:
+                        pkg = SkillPackage.load(skill_md.parent)
+                        packages.setdefault(pkg.skill.name, pkg)
+                    except Exception:
+                        pass
+        return packages
+
+    target = path or Path(".")
+    if target.is_file() or (target / "SKILL.md").is_file():
+        pkg = SkillPackage.load(target)
+        packages[pkg.skill.name] = pkg
+        return packages
+
+    # Direct child folders with SKILL.md (e.g. if path is already a skills/ dir)
+    if target.is_dir():
+        for skill_md in sorted(target.glob("*/SKILL.md")):
+            try:
+                pkg = SkillPackage.load(skill_md.parent)
+                packages.setdefault(pkg.skill.name, pkg)
+            except Exception:
+                pass
+
+    search_roots = (
+        target / ".claude" / "skills",
+        target / ".cursor" / "skills",
+        target / ".gemini" / "config" / "skills",
+        target / ".windsurf" / "skills",
+        target / ".cline" / "skills",
+        target / "skills",
+        target / ".agents" / "skills",
+        target / ".skillforge",
+    )
+    for root in search_roots:
+        if root.is_dir():
+            for skill_md in sorted(root.glob("*/SKILL.md")):
+                try:
+                    pkg = SkillPackage.load(skill_md.parent)
+                    packages.setdefault(pkg.skill.name, pkg)
+                except Exception:
+                    pass
+
+    return packages
+
+
 @app.command()
 def budget(
     path: Path = typer.Option(Path("."), "--path", "-p", help="Project root or skill directory to profile."),
@@ -353,30 +421,8 @@ def budget(
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
 ) -> None:
     """Measure startup pointer token load vs on-demand body token load across skills."""
-    packages: dict[str, SkillPackage] = {}
     try:
-        if builtin:
-            reg = BuiltinRegistry()
-            for skill in reg.search(""):
-                packages[skill.name] = reg.get_package(skill.name)
-        elif path.is_file() or (path / "SKILL.md").is_file():
-            pkg = SkillPackage.load(path)
-            packages[pkg.skill.name] = pkg
-        else:
-            search_Roots = (
-                path / ".claude" / "skills",
-                path / ".cursor" / "skills",
-                path / ".gemini" / "config" / "skills",
-                path / ".windsurf" / "skills",
-                path / ".cline" / "skills",
-                path / "skills",
-                path / ".skillforge",
-            )
-            for root in search_Roots:
-                if root.is_dir():
-                    for skill_md in sorted(root.glob("*/SKILL.md")):
-                        pkg = SkillPackage.load(skill_md.parent)
-                        packages.setdefault(pkg.skill.name, pkg)
+        packages = _discover_packages(path, builtin=builtin)
     except (SkillForgeError, OSError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
@@ -433,6 +479,168 @@ def budget(
             f"body: {item['body_tokens']:>5} tok ({item['body_lines']:>3} lines) | "
             f"resources: {item['resource_tokens']:>5} tok{status}"
         )
+
+
+@app.command()
+def doctor(
+    project: Path = typer.Option(Path("."), "--project", "-p", help="Target project root to diagnose."),
+    global_scope: bool = typer.Option(False, "--global", "-g", help="Diagnose global user assistant configurations."),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+) -> None:
+    """Run a comprehensive health, security, and context budget diagnostic across installed skills."""
+    packages = _discover_packages(project, global_scope=global_scope)
+    if not packages:
+        msg = "No installed skills found in detected assistant environments."
+        if json_output:
+            typer.echo(json.dumps({"status": "clean", "skills_count": 0, "message": msg}))
+        else:
+            typer.echo(msg)
+        return
+
+    auditor = SkillAuditor()
+    total_pointer = 0
+    total_body = 0
+    passed_count = 0
+    failed_count = 0
+    critical_findings = 0
+    high_findings = 0
+    all_findings: list[dict[str, Any]] = []
+
+    for name, pkg in sorted(packages.items()):
+        report = auditor.audit_package(pkg)
+        total_pointer += pkg.skill.pointer_tokens
+        total_body += pkg.skill.body_tokens
+        if report.passed:
+            passed_count += 1
+        else:
+            failed_count += 1
+
+        for f in report.findings:
+            if f.severity == Severity.CRITICAL:
+                critical_findings += 1
+            elif f.severity == Severity.HIGH:
+                high_findings += 1
+            all_findings.append(
+                {
+                    "skill": name,
+                    "rule_id": f.rule_id,
+                    "severity": f.severity.value,
+                    "message": f.message,
+                    "file": f.file,
+                }
+            )
+
+    result = {
+        "status": "FAILED" if failed_count > 0 else "HEALTHY",
+        "skills_scanned": len(packages),
+        "passed_skills": passed_count,
+        "failed_skills": failed_count,
+        "total_pointer_tokens": total_pointer,
+        "total_body_tokens": total_body,
+        "critical_issues": critical_findings,
+        "high_issues": high_findings,
+        "findings": all_findings,
+    }
+
+    if json_output:
+        typer.echo(json.dumps(result))
+        if failed_count > 0:
+            raise typer.Exit(code=1)
+        return
+
+    scope_name = "Global" if global_scope else "Project"
+    status_str = "PASSED (All Healthy)" if failed_count == 0 else f"WARNING ({failed_count} skills flagged)"
+    typer.echo(f"SkillForge Doctor Diagnostic ({scope_name}: {len(packages)} skills)")
+    typer.echo(f"  Health Status:        {status_str}")
+    typer.echo(f"  Startup Context Load: ~{total_pointer} tokens (Every turn discovery cost)")
+    typer.echo(f"  On-Demand Body Cost:  ~{total_body} tokens")
+    typer.echo(f"  Security Findings:    {critical_findings} Critical, {high_findings} High, {len(all_findings)} Total\n")
+
+    if all_findings:
+        typer.echo("Findings:")
+        for finding in all_findings:
+            typer.echo(f"  [{finding['severity']}] {finding['skill']} -> {finding['rule_id']}: {finding['message']}")
+
+    if failed_count > 0:
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def diff(
+    target_a: str = typer.Argument(..., help="Path to local skill folder, or skill name."),
+    target_b: str | None = typer.Argument(None, help="Comparison target (remote spec 'owner/repo:skill' or second path)."),
+    project: Path = typer.Option(Path("."), "--project", "-p", help="Target project root."),
+) -> None:
+    """Compare two skills or inspect local changes against an upstream spec."""
+    try:
+        path_a = Path(target_a)
+        if path_a.exists():
+            pkg_a = SkillPackage.load(path_a)
+        else:
+            pkg_a = _registry(project / ".skillforge").get_package(target_a)
+
+        if target_b is None:
+            lock_file = project / "skillforge.lock"
+            remote_spec = None
+            if lock_file.is_file():
+                try:
+                    data = json.loads(lock_file.read_text(encoding="utf-8"))
+                    if pkg_a.skill.name in data:
+                        entry = data[pkg_a.skill.name]
+                        remote_spec = entry.get("spec") if isinstance(entry, dict) else str(entry)
+                except Exception:
+                    pass
+            if not remote_spec:
+                typer.echo(f"No second target provided and no lockfile spec found for '{pkg_a.skill.name}'.", err=True)
+                raise typer.Exit(code=1)
+            pkg_b = GitRemoteRegistry().fetch_skill(remote_spec)
+        else:
+            path_b = Path(target_b)
+            if path_b.exists():
+                pkg_b = SkillPackage.load(path_b)
+            elif "/" in target_b or ":" in target_b:
+                pkg_b = GitRemoteRegistry().fetch_skill(target_b)
+            else:
+                pkg_b = _registry(project / ".skillforge").get_package(target_b)
+
+        sha_a = pkg_a.compute_sha256()
+        sha_b = pkg_b.compute_sha256()
+        typer.echo(f"Diff: {pkg_a.skill.name} ({sha_a[:8]}) <-> {pkg_b.skill.name} ({sha_b[:8]})")
+        if sha_a == sha_b:
+            typer.echo("Skills are identical (SHA-256 match).")
+            return
+
+        lines_a = pkg_a.skill.render().splitlines(keepends=True)
+        lines_b = pkg_b.skill.render().splitlines(keepends=True)
+        diff_lines = list(difflib.unified_diff(lines_a, lines_b, fromfile="target_a/SKILL.md", tofile="target_b/SKILL.md"))
+        if diff_lines:
+            typer.echo("".join(diff_lines))
+
+        all_refs = sorted(set(pkg_a.references.keys()) | set(pkg_b.references.keys()))
+        for ref in all_refs:
+            in_a = ref in pkg_a.references
+            in_b = ref in pkg_b.references
+            if in_a and not in_b:
+                typer.echo(f"- Deleted reference: references/{ref}")
+            elif in_b and not in_a:
+                typer.echo(f"+ Added reference: references/{ref}")
+            elif pkg_a.references[ref] != pkg_b.references[ref]:
+                typer.echo(f"~ Modified reference: references/{ref}")
+
+        all_scripts = sorted(set(pkg_a.scripts.keys()) | set(pkg_b.scripts.keys()))
+        for script in all_scripts:
+            in_a = script in pkg_a.scripts
+            in_b = script in pkg_b.scripts
+            if in_a and not in_b:
+                typer.echo(f"- Deleted script: scripts/{script}")
+            elif in_b and not in_a:
+                typer.echo(f"+ Added script: scripts/{script}")
+            elif pkg_a.scripts[script] != pkg_b.scripts[script]:
+                typer.echo(f"~ Modified script: scripts/{script}")
+
+    except (SkillForgeError, OSError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
 
 
 @app.command()

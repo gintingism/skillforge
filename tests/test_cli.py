@@ -221,3 +221,32 @@ def test_cli_budget_and_sync_commands(tmp_path: Path) -> None:
     bad_sync = runner.invoke(app, ["sync", "--project", str(project)])
     assert bad_sync.exit_code == 1
     assert "Integrity verification FAILED" in bad_sync.output
+
+
+def test_cli_doctor_and_diff_commands(tmp_path: Path) -> None:
+    project = tmp_path / "doctor_project"
+    claude_skills = project / ".claude" / "skills"
+    good_skill = claude_skills / "good-skill"
+    good_skill.mkdir(parents=True)
+    (good_skill / "SKILL.md").write_text(
+        "---\nname: good-skill\ndescription: Use when doing good things\n---\n\n# Body\n",
+        encoding="utf-8",
+    )
+
+    doc_res = runner.invoke(app, ["doctor", "--project", str(project), "--json"])
+    assert doc_res.exit_code == 0, doc_res.output
+    doc_data = json.loads(doc_res.stdout)
+    assert doc_data["status"] == "HEALTHY"
+    assert doc_data["skills_scanned"] == 1
+
+    # Diff command between good-skill and another version
+    v2_skill = tmp_path / "v2_skill"
+    v2_skill.mkdir()
+    (v2_skill / "SKILL.md").write_text(
+        "---\nname: good-skill\ndescription: Use when doing good things v2\n---\n\n# Body V2\n",
+        encoding="utf-8",
+    )
+    diff_res = runner.invoke(app, ["diff", str(good_skill), str(v2_skill)])
+    assert diff_res.exit_code == 0, diff_res.output
+    assert "target_a/SKILL.md" in diff_res.output
+    assert "good things v2" in diff_res.output

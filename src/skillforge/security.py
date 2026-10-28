@@ -166,6 +166,33 @@ _CREDENTIAL_ACCESS_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ),
 ]
 
+_EXFILTRATION_ENDPOINT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    (
+        "SEC-005",
+        re.compile(r"(?i)\b(https?://)?([a-z0-9_-]+\.)?(webhook\.site|pipedream\.net|requestbin\.net|burpcollaborator\.net)\b"),
+    ),
+    (
+        "SEC-005",
+        re.compile(r"(?i)\b(curl|wget)\b.*(--data|-d|--post-data|-F)\b.*(\$|\b(process\.env|os\.environ)\b).*(api[_-]?key|token|secret|password|auth)"),
+    ),
+]
+
+_HARDCODED_SECRET_PATTERNS: list[tuple[str, re.Pattern[str], Severity]] = [
+    ("SEC-006", re.compile(r"\bghp_[A-Za-z0-9]{36}\b"), Severity.CRITICAL),
+    ("SEC-006", re.compile(r"\bgithub_pat_[A-Za-z0-9_]{82}\b"), Severity.CRITICAL),
+    ("SEC-006", re.compile(r"\bsk-ant-[A-Za-z0-9_-]{32,}\b"), Severity.CRITICAL),
+    ("SEC-006", re.compile(r"\bAIzaSy[A-Za-z0-9_-]{33}\b"), Severity.CRITICAL),
+    ("SEC-006", re.compile(r"\bAKIA[0-9A-Z]{16}\b"), Severity.HIGH),
+]
+
+_OVERBROAD_TRIGGER_PATTERN = re.compile(
+    r"(?i)\b(always\s+use\s+(this\s+skill|for\s+all)|trigger\s+on\s+all|for\s+any\s+(task|request|prompt|question)|execute\s+this\s+first\s+before\s+anything)\b"
+)
+
+_DEFENSIVE_CONTEXT_PATTERN = re.compile(
+    r"(?i)\b(flag\s+it|steer\s+you|warn|reject|detect|defend|counter|malicious|attack|payload|untrusted|sanitiz)\b"
+)
+
 _TRIGGER_KEYWORDS = ("when", "use when", "for", "if", "trigger", "tasks")
 _MAX_BODY_LINES = 500
 _MAX_BODY_TOKENS = 5000
@@ -199,6 +226,21 @@ class SkillAuditor:
             )
 
         desc_lower = package.skill.description.lower()
+        match_hijack = _OVERBROAD_TRIGGER_PATTERN.search(package.skill.description)
+        if match_hijack:
+            findings.append(
+                AuditFinding(
+                    rule_id="QUAL-006",
+                    severity=Severity.MEDIUM,
+                    message=(
+                        f"Overbroad trigger or applicability hijacking pattern: '{match_hijack.group(0)}' "
+                        "(skills should specify scoped trigger conditions rather than claiming all tasks)"
+                    ),
+                    file="SKILL.md",
+                    snippet=package.skill.description[:120],
+                )
+            )
+
         if not package.skill.disable_model_invocation and not any(
             keyword in desc_lower for keyword in _TRIGGER_KEYWORDS
         ):
@@ -313,6 +355,9 @@ class SkillAuditor:
             for rule_id, pattern in _INJECTION_PATTERNS:
                 match_inj = pattern.search(line)
                 if match_inj:
+                    # Avoid false positives when instructions explicitly warn about attacks in quotes
+                    if _DEFENSIVE_CONTEXT_PATTERN.search(line) and ('"' in line or "'" in line or "`" in line):
+                        continue
                     findings.append(
                         AuditFinding(
                             rule_id=rule_id,
@@ -339,6 +384,36 @@ class SkillAuditor:
                         )
                     )
 
+            # Check exfiltration endpoints in text
+            for rule_id, pattern in _EXFILTRATION_ENDPOINT_PATTERNS:
+                match_exfil = pattern.search(line)
+                if match_exfil:
+                    findings.append(
+                        AuditFinding(
+                            rule_id=rule_id,
+                            severity=Severity.HIGH,
+                            message=f"Suspicious external data exfiltration pattern: '{match_exfil.group(0)}'",
+                            file=filename,
+                            line=idx,
+                            snippet=line.strip(),
+                        )
+                    )
+
+            # Check hardcoded secrets / high-entropy API tokens
+            for rule_id, pattern, severity in _HARDCODED_SECRET_PATTERNS:
+                match_sec = pattern.search(line)
+                if match_sec:
+                    findings.append(
+                        AuditFinding(
+                            rule_id=rule_id,
+                            severity=severity,
+                            message=f"Hardcoded API secret or credential token pattern detected: '{match_sec.group(0)[:8]}...'",
+                            file=filename,
+                            line=idx,
+                            snippet=line.strip()[:60],
+                        )
+                    )
+
         return findings
 
     def _scan_shell_content(self, text: str, filename: str) -> list[AuditFinding]:
@@ -354,6 +429,19 @@ class SkillAuditor:
                             rule_id=rule_id,
                             severity=Severity.HIGH,
                             message=f"Suspicious shell execution or potential exfiltration pattern: '{match.group(0)}'",
+                            file=filename,
+                            line=idx,
+                            snippet=line.strip(),
+                        )
+                    )
+            for rule_id, pattern in _EXFILTRATION_ENDPOINT_PATTERNS:
+                match_exfil = pattern.search(line)
+                if match_exfil:
+                    findings.append(
+                        AuditFinding(
+                            rule_id=rule_id,
+                            severity=Severity.HIGH,
+                            message=f"Outbound exfiltration endpoint or credential transmission: '{match_exfil.group(0)}'",
                             file=filename,
                             line=idx,
                             snippet=line.strip(),

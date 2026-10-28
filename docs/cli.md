@@ -22,6 +22,21 @@ skillforge sync
 skillforge sync --project ./my-repo
 ```
 
+### `skillforge doctor`
+Run a full health, security, and context budget diagnostic across installed skills:
+```bash
+skillforge doctor
+skillforge doctor --global
+skillforge doctor --json
+```
+
+### `skillforge diff <target_a> [target_b]`
+Compare changes between a local skill and an upstream repo, or between two skill directories:
+```bash
+skillforge diff ./skills/my-skill
+skillforge diff my-skill gintingism/skillforge:my-skill
+```
+
 ### `skillforge budget`
 Profile context window token usage across installed or built-in skills, separating always-loaded startup pointer tokens from on-demand `SKILL.md` body and disclosed resource tokens:
 ```bash

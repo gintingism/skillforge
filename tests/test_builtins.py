@@ -28,6 +28,9 @@ def test_builtin_registry_lists_and_loads_all_builtin_skills() -> None:
         "skill-architect",
         "security-threat-modeler",
         "performance-profiler",
+        "supply-chain-sentinel",
+        "secret-sanitizer",
+        "contract-test-generator",
     }
     auditor = SkillAuditor()
     for skill in skills:
