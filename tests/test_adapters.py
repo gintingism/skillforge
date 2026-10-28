@@ -20,7 +20,9 @@ def test_copilot_adapter_installs_instruction_file(tmp_path: Path) -> None:
     skill = Skill("demo", "A demo", "# Demo\n")
     path = CopilotAdapter().install(skill, tmp_path)
     assert path == tmp_path / ".github" / "copilot-instructions.md"
-    assert "name: demo" in path.read_text(encoding="utf-8")
+    content = path.read_text(encoding="utf-8")
+    assert "<!-- skillforge:demo:start -->" in content
+    assert "### Skill: demo" in content
 
 
 def test_claude_adapter_installs_skill_directory(tmp_path: Path) -> None:

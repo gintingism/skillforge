@@ -201,25 +201,44 @@ class GitRemoteRegistry(Registry):
         self.cache_dir = cache_dir or (Path.home() / ".skillforge" / "cache")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
+    _OWNER_REPO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$")
+    _SKILL_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+
     @classmethod
     def parse_spec(cls, spec: str) -> tuple[str, str | None]:
         """Parse 'owner/repo:skill_name' or Git URL into (repo_url, skill_name)."""
         clean = spec.strip()
-        if ":" in clean and not clean.startswith(("http://", "https://", "git@")):
+        has_scheme = clean.startswith(("http://", "https://", "git@", "ssh://"))
+        if ":" in clean and not has_scheme:
             repo_part, skill_part = clean.split(":", 1)
-            repo_url = f"https://github.com/{repo_part}.git"
-            return repo_url, skill_part
-        if ":" in clean and clean.count(":") > 1:
+            cls._check_shorthand(repo_part, skill_part)
+            return f"https://github.com/{repo_part}.git", skill_part
+        if has_scheme and clean.count(":") > 1 and not clean.startswith("git@"):
             # Handles https://github.com/owner/repo.git:skill_name
             repo_part, skill_part = clean.rsplit(":", 1)
+            if skill_part.isdigit() or "/" in skill_part:
+                return clean, None
+            if not cls._SKILL_NAME.fullmatch(skill_part):
+                raise RegistryError(f"Invalid skill name in spec: {skill_part!r}")
             return repo_part, skill_part
-        if "/" in clean and not clean.startswith(("http://", "https://", "git@")):
+        if "/" in clean and not has_scheme:
             # Handles owner/repo (whole repo as skill or collection)
+            cls._check_shorthand(clean, None)
             return f"https://github.com/{clean}.git", None
         return clean, None
 
+    @classmethod
+    def _check_shorthand(cls, repo_part: str, skill_part: str | None) -> None:
+        if not cls._OWNER_REPO.fullmatch(repo_part):
+            raise RegistryError(
+                f"Invalid repository spec {repo_part!r}: expected owner/repo, optionally followed by :skill"
+            )
+        if skill_part is not None and not cls._SKILL_NAME.fullmatch(skill_part):
+            raise RegistryError(f"Invalid skill name in spec: {skill_part!r}")
+
     def _clone_or_update(self, repo_url: str) -> Path:
         """Clone or update repository into local cache directory."""
+        self._check_repo_url(repo_url)
         sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", repo_url)
         target = self.cache_dir / sanitized
 
@@ -239,7 +258,7 @@ class GitRemoteRegistry(Registry):
 
         try:
             subprocess.run(
-                ["git", "clone", "--depth", "1", repo_url, str(target)],
+                ["git", "clone", "--depth", "1", "--", repo_url, str(target)],
                 check=True,
                 capture_output=True,
                 text=True,
@@ -247,6 +266,19 @@ class GitRemoteRegistry(Registry):
             return target
         except Exception as exc:
             raise RegistryError(f"Failed to clone remote repository {repo_url}: {exc}") from exc
+
+    @staticmethod
+    def _check_repo_url(repo_url: str) -> None:
+        """Allow only https/ssh remotes so a spec cannot smuggle git options or exotic transports."""
+        if repo_url.startswith("-"):
+            raise RegistryError(f"Refusing repository spec that looks like a git option: {repo_url!r}")
+        if repo_url.startswith("git@"):
+            return
+        parsed = urlparse(repo_url)
+        if parsed.scheme not in {"https", "ssh"} or not parsed.netloc:
+            raise RegistryError(
+                f"Unsupported repository URL {repo_url!r}: use owner/repo, an https:// URL, or git@host:path"
+            )
 
     def fetch_skill(self, spec: str) -> SkillPackage:
         """Resolve a remote spec like 'owner/repo:skill' into a SkillPackage."""

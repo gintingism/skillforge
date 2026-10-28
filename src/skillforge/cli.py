@@ -650,6 +650,12 @@ def remove(
     global_install: bool = typer.Option(False, "--global", "-g", help="Remove from global configuration."),
 ) -> None:
     """Remove an installed skill from detected assistants and skillforge.lock."""
+    try:
+        Skill.validate_name(name)
+    except SkillForgeError as exc:
+        typer.echo(f"Refusing to remove {name!r}: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
     adapters = detect_adapters(project, global_scope=global_install)
     if not adapters:
         typer.echo("No supported assistant targets detected.", err=True)
@@ -657,7 +663,12 @@ def remove(
 
     removed_any = False
     for adapter in adapters:
-        if adapter.remove(name, project):
+        try:
+            removed = adapter.remove(name, project)
+        except SkillForgeError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
+        if removed:
             typer.echo(f"Removed from {type(adapter).__name__.replace('Adapter', '')}")
             removed_any = True
 

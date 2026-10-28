@@ -56,13 +56,13 @@ Example output:
 ```text
 Audit Report: my-new-skill
 Status: PASSED (Score: 100/100)
-Context Load: 24 pointer tokens | 280 body tokens (42 lines)
+Context Load: 60 pointer tokens | 520 body tokens (27 lines)
 Total Findings: 0
 ```
 
 What the auditor scans for:
 - **Invisible Unicode (SEC-001):** Zero-width spaces (`\u200B`, `\uFEFF`), homoglyphs, and directional overrides used to hide prompt instructions from human code review.
-- **Prompt Injections & Jailbreaks (SEC-002):** Directives like `"ignore previous instructions"`, `"system override"`, or attempts to disable safety guardrails (with smart context filters for defensive guides).
+- **Prompt Injections & Jailbreaks (SEC-002):** Directives like `"ignore previous instructions"`, `"system override"`, or attempts to disable safety guardrails. A quoted phrase next to words like "flag" or "reject" is reported as MEDIUM (a guide warning against the phrase), a bare one stays CRITICAL.
 - **Dangerous Shell Commands (SEC-003):** Script patterns like `curl ... | bash`, base64-decoded execution, and outbound data exfiltration.
 - **Credential Path Access (SEC-004):** Unsanctioned attempts to access `~/.ssh`, `~/.aws/credentials`, or local environment secrets.
 - **Data & Environment Exfiltration (SEC-005):** Sending environment variables or secrets to external webhook endpoints (`webhook.site`, `pipedream.net`).
@@ -110,10 +110,12 @@ skillforge budget --builtin
 ```
 ```text
 Context Budget Profile (22 skills)
-  Always-Loaded Startup Pointer Cost: ~1280 tokens
-  On-Demand SKILL.md Body Cost:       ~7450 tokens
+  Always-Loaded Startup Pointer Cost: ~1305 tokens
+  On-Demand SKILL.md Body Cost:       ~7483 tokens
   Disclosed Resources Cost:           ~349 tokens
 ```
+
+Token counts are estimates (about 4 characters per token), so treat them as relative sizes, not exact billing numbers.
 
 ### 6. Check what's installed in your project (`list` & `remove`)
 
@@ -254,10 +256,11 @@ SkillForge is published to PyPI under the package name `agent-skillforge`.
 2. Bump the version in `pyproject.toml` (e.g. `0.2.0`).
 
 ### Triggering a Release
-You can publish through any of these three methods:
+You can publish through either of these:
 - **Git tag:** `git tag v0.2.0 && git push origin v0.2.0`
-- **GitHub Release:** Publish a new release in the GitHub UI.
 - **Manual dispatch:** Go to the GitHub Actions tab → "Publish package" → click "Run workflow".
+
+A GitHub Release page is optional and does not publish on its own; create it after the tag with `gh release create`.
 
 ### Local build check
 To test building distributions locally before releasing:

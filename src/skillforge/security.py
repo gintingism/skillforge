@@ -193,7 +193,7 @@ _DEFENSIVE_CONTEXT_PATTERN = re.compile(
     r"(?i)\b(flag\s+it|steer\s+you|warn|reject|detect|defend|counter|malicious|attack|payload|untrusted|sanitiz)\b"
 )
 
-_TRIGGER_KEYWORDS = ("when", "use when", "for", "if", "trigger", "tasks")
+_TRIGGER_PATTERN = re.compile(r"(?i)\b(when|for|if|triggers?|triggered|tasks?)\b")
 _MAX_BODY_LINES = 500
 _MAX_BODY_TOKENS = 5000
 _DISCLOSED_PATH_PATTERN = re.compile(
@@ -225,7 +225,6 @@ class SkillAuditor:
                 )
             )
 
-        desc_lower = package.skill.description.lower()
         match_hijack = _OVERBROAD_TRIGGER_PATTERN.search(package.skill.description)
         if match_hijack:
             findings.append(
@@ -241,8 +240,8 @@ class SkillAuditor:
                 )
             )
 
-        if not package.skill.disable_model_invocation and not any(
-            keyword in desc_lower for keyword in _TRIGGER_KEYWORDS
+        if not package.skill.disable_model_invocation and not _TRIGGER_PATTERN.search(
+            package.skill.description
         ):
             findings.append(
                 AuditFinding(
@@ -293,7 +292,13 @@ class SkillAuditor:
         """Verify that files referenced via progressive disclosure exist in the package."""
         findings: list[AuditFinding] = []
         seen: set[tuple[str, str]] = set()
+        in_fence = False
         for idx, line in enumerate(package.skill.body.splitlines(), start=1):
+            if line.lstrip().startswith(("```", "~~~")):
+                in_fence = not in_fence
+                continue
+            if in_fence:
+                continue
             for match in _DISCLOSED_PATH_PATTERN.finditer(line):
                 folder, rel_path = match.group(1), match.group(2)
                 if (folder, rel_path) in seen:
@@ -355,14 +360,22 @@ class SkillAuditor:
             for rule_id, pattern in _INJECTION_PATTERNS:
                 match_inj = pattern.search(line)
                 if match_inj:
-                    # Avoid false positives when instructions explicitly warn about attacks in quotes
-                    if _DEFENSIVE_CONTEXT_PATTERN.search(line) and ('"' in line or "'" in line or "`" in line):
-                        continue
+                    # A quoted phrase next to words like "flag" or "reject" is usually a guide
+                    # teaching the agent to resist injection. Report it, but do not fail the audit:
+                    # an attacker can fake this framing, so it must stay visible to a human reviewer.
+                    quoted_defense = bool(
+                        _DEFENSIVE_CONTEXT_PATTERN.search(line) and re.search(r"[\"'`]", line)
+                    )
                     findings.append(
                         AuditFinding(
                             rule_id=rule_id,
-                            severity=Severity.CRITICAL,
-                            message=f"Prompt injection pattern detected: '{match_inj.group(0)}'",
+                            severity=Severity.MEDIUM if quoted_defense else Severity.CRITICAL,
+                            message=(
+                                f"Quoted prompt injection phrase in defensive-looking text: '{match_inj.group(0)}' "
+                                "(verify this line warns against the phrase rather than obeying it)"
+                                if quoted_defense
+                                else f"Prompt injection pattern detected: '{match_inj.group(0)}'"
+                            ),
                             file=filename,
                             line=idx,
                             snippet=line.strip(),

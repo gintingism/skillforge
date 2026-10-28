@@ -1,8 +1,9 @@
 name: Publish package
 
+# Tag pushes publish to PyPI. Creating a GitHub release for the same tag used to start a
+# second run that failed on the duplicate upload, so only the tag trigger remains.
+# Use workflow_dispatch to retry a failed publish.
 on:
-  release:
-    types: [published]
   push:
     tags:
       - 'v*'

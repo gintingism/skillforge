@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Union
 
-from .errors import AdapterError
+from .errors import AdapterError, SkillValidationError
 from .skill import Skill, SkillPackage
 
 SkillTarget = Union[Skill, SkillPackage]
@@ -41,6 +41,15 @@ class Adapter(ABC):
         return skill_target, None
 
     @staticmethod
+    def _checked_name(name: str) -> str:
+        """Reject names that could escape the skills directory before touching the filesystem."""
+        try:
+            Skill.validate_name(name)
+        except SkillValidationError as exc:
+            raise AdapterError(f"Refusing unsafe skill name {name!r}: {exc}") from exc
+        return name
+
+    @staticmethod
     def _safe_rmtree(path: Path) -> None:
         if path.is_dir():
             shutil.rmtree(path)
@@ -48,38 +57,76 @@ class Adapter(ABC):
             path.unlink()
 
 
+def _marker(name: str, edge: str) -> str:
+    return f"<!-- skillforge:{name}:{edge} -->"
+
+
+def _replace_block(existing: str, name: str, block: str) -> str:
+    """Insert or replace a marker-delimited block without touching surrounding text."""
+    start, end = _marker(name, "start"), _marker(name, "end")
+    if start in existing and end in existing:
+        before, _, rest = existing.partition(start)
+        _, _, after = rest.partition(end)
+        return before + block.strip() + after
+    return (existing.rstrip() + "\n\n" + block.strip() + "\n").lstrip()
+
+
+def _remove_block(existing: str, name: str) -> str | None:
+    """Remove a marker-delimited block. Return None when the block is absent."""
+    start, end = _marker(name, "start"), _marker(name, "end")
+    if start not in existing or end not in existing:
+        return None
+    before, _, rest = existing.partition(start)
+    _, _, after = rest.partition(end)
+    return (before.rstrip() + "\n" + after.lstrip()).strip() + "\n"
+
+
 class CopilotAdapter(Adapter):
-    """Adapter for GitHub Copilot repository instructions."""
+    """Adapter for GitHub Copilot repository instructions.
+
+    Skills are written as marker-delimited blocks so hand-written instructions in the
+    same file survive install and remove.
+    """
+
+    _FILE = Path(".github") / "copilot-instructions.md"
 
     def detect(self, project: Path) -> bool:
-        return (project / ".github").is_dir() or (project / ".github" / "copilot-instructions.md").exists()
+        return (project / ".github").is_dir() or (project / self._FILE).exists()
 
     def install(self, skill: SkillTarget, project: Path) -> Path:
         skill_obj, _ = self._extract_skill(skill)
-        target = project / ".github" / "copilot-instructions.md"
+        target = project / self._FILE
+        block = (
+            f"{_marker(skill_obj.name, 'start')}\n"
+            f"### Skill: {skill_obj.name}\n"
+            f"{skill_obj.description}\n\n"
+            f"{skill_obj.body.strip()}\n"
+            f"{_marker(skill_obj.name, 'end')}\n"
+        )
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(skill_obj.render(), encoding="utf-8")
+            existing = target.read_text(encoding="utf-8") if target.is_file() else ""
+            target.write_text(_replace_block(existing, skill_obj.name, block), encoding="utf-8")
         except OSError as exc:
             raise AdapterError(f"Unable to install Copilot instructions: {exc}") from exc
         return target
 
     def remove(self, name: str, project: Path) -> bool:
-        target = project / ".github" / "copilot-instructions.md"
-        if target.is_file():
-            target.unlink()
-            return True
-        return False
+        self._checked_name(name)
+        target = project / self._FILE
+        if not target.is_file():
+            return False
+        updated = _remove_block(target.read_text(encoding="utf-8"), name)
+        if updated is None:
+            return False
+        target.write_text(updated, encoding="utf-8")
+        return True
 
     def list_skills(self, project: Path) -> list[str]:
-        target = project / ".github" / "copilot-instructions.md"
-        if target.is_file():
-            try:
-                skill = Skill.load(target)
-                return [skill.name]
-            except Exception:
-                return ["copilot-instructions"]
-        return []
+        target = project / self._FILE
+        if not target.is_file():
+            return []
+        return re.findall(r"<!-- skillforge:(.*?):start -->", target.read_text(encoding="utf-8"))
 
 
 class ClaudeAdapter(Adapter):
@@ -103,6 +150,7 @@ class ClaudeAdapter(Adapter):
         return target
 
     def remove(self, name: str, project: Path) -> bool:
+        self._checked_name(name)
         skill_dir = project / ".claude" / "skills" / name
         if skill_dir.exists():
             self._safe_rmtree(skill_dir)
@@ -141,6 +189,7 @@ class CursorAdapter(Adapter):
         return target
 
     def remove(self, name: str, project: Path) -> bool:
+        self._checked_name(name)
         skill_dir = project / ".cursor" / "skills" / name
         if skill_dir.exists():
             self._safe_rmtree(skill_dir)
@@ -175,6 +224,7 @@ class AntigravityAdapter(Adapter):
         return target
 
     def remove(self, name: str, project: Path) -> bool:
+        self._checked_name(name)
         skill_dir = project / ".gemini" / "config" / "skills" / name
         if skill_dir.exists():
             self._safe_rmtree(skill_dir)
@@ -209,6 +259,7 @@ class WindsurfAdapter(Adapter):
         return target
 
     def remove(self, name: str, project: Path) -> bool:
+        self._checked_name(name)
         skill_dir = project / ".windsurf" / "skills" / name
         if skill_dir.exists():
             self._safe_rmtree(skill_dir)
@@ -243,6 +294,7 @@ class ClineAdapter(Adapter):
         return target
 
     def remove(self, name: str, project: Path) -> bool:
+        self._checked_name(name)
         skill_dir = project / ".cline" / "skills" / name
         if skill_dir.exists():
             self._safe_rmtree(skill_dir)
@@ -288,6 +340,7 @@ class AgentsMarkdownAdapter(Adapter):
         return target
 
     def remove(self, name: str, project: Path) -> bool:
+        self._checked_name(name)
         target = project / "AGENTS.md"
         if not target.is_file():
             return False
