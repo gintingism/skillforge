@@ -1,7 +1,12 @@
 # Changelog
 
-## 0.4.1 - 2026-10-28
+## 0.4.1 - 2026-11-01
 
+- Added `skillforge badge` command to generate official verified shields.io badges for skill repositories (Markdown, HTML, JSON).
+- Added official composite GitHub Action (`action.yml`) for automated security auditing and token budgeting on Pull Requests.
+- Added automated VHS tape script (`demo.tape`) for recording terminal workflow GIFs.
+- Added Hacker News Show HN, Reddit, and X/Twitter launch execution playbook in `docs/LAUNCH_PLAYBOOK.md`.
+- Revamped `README.md` with zero-install `uvx` quickstart, comparison benchmark table, and verified badges.
 - Added `skillforge verify` command to audit installed skills against `skillforge.lock` for file drift, tampering, or missing packages without modifying files.
 - Added reproducible Git commit SHA pinning in `skillforge.lock` and `GitRemoteRegistry` with support for `@<ref>` in remote specs.
 - Fixed path traversal vulnerability in `skillforge remove` and adapter `remove()` methods (`_checked_name` guard).

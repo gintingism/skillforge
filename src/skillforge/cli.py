@@ -82,6 +82,64 @@ def audit(
 
 
 @app.command()
+def badge(
+    path: Path = typer.Argument(Path("."), help="Path to skill directory or SKILL.md file."),
+    markdown_only: bool = typer.Option(False, "--markdown", "-m", help="Print only the markdown badge string."),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+) -> None:
+    """Generate an official 'Audited by SkillForge' shield badge for your skill repository."""
+    try:
+        report = audit_path(path)
+    except (SkillForgeError, OSError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"passed": False, "error": str(exc)}))
+        else:
+            typer.echo(f"Audit error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if report.passed:
+        label = "SkillForge"
+        message = f"Security%20Passed%20{report.score}%2F100"
+        color = "2ea44f"
+    else:
+        label = "SkillForge"
+        message = "Audit%20Failed"
+        color = "cb2431"
+
+    badge_url = f"https://img.shields.io/badge/{label}-{message}-{color}?logo=shield&style=flat-square"
+    repo_url = "https://github.com/gintingism/skillforge"
+    md_badge = f"[![Audited by SkillForge]({badge_url})]({repo_url})"
+    html_badge = f'<a href="{repo_url}"><img src="{badge_url}" alt="Audited by SkillForge" /></a>'
+
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "passed": report.passed,
+                    "score": report.score,
+                    "badge_url": badge_url,
+                    "markdown": md_badge,
+                    "html": html_badge,
+                },
+                indent=2,
+            )
+        )
+        return
+
+    if markdown_only:
+        typer.echo(md_badge)
+        return
+
+    status_str = "PASSED" if report.passed else "FAILED"
+    typer.echo(f"Audit Status: {status_str} (Score: {report.score}/100)")
+    typer.echo("\nMarkdown Badge (copy-paste into your SKILL.md or README.md):")
+    typer.echo(f"  {md_badge}\n")
+    typer.echo("HTML Badge:")
+    typer.echo(f"  {html_badge}\n")
+    typer.echo(f"Shield URL: {badge_url}")
+
+
+@app.command()
 def create(
     name: str,
     description: str = typer.Option(..., "--description", "-d", help="What the skill does and when to use it."),
