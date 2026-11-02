@@ -9,7 +9,7 @@ description = "Universal package manager, security auditor, and MCP server for p
 readme = "README.md"
 license = "MIT"
 authors = [
-    { name = "gintingism", email = "gintingism@users.noreply.github.com" },
+    { name = "Bonifasius Toto Neguisa Ginting", email = "gintingism@users.noreply.github.com" },
 ]
 keywords = [
     "agent-skills",
