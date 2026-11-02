@@ -10,68 +10,72 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![Audited by SkillForge](https://img.shields.io/badge/Security-SkillForge%20Passed-2ea44f?logo=shield&style=flat-square)](https://github.com/gintingism/skillforge)
 
-*Write once. Audit locally. Deploy seamlessly across Claude Code, Cursor, Google Antigravity, Windsurf, Copilot, and Cline.*
+Audit, package, test, and profile portable agent skills across Claude Code, Cursor, Google Antigravity, Windsurf, GitHub Copilot, and Cline.
 
 </div>
 
 ---
 
-## ⚡ 10-Second Quickstart (Zero-Install)
+## Quickstart
 
-No Node.js, npm, or permanent installation required. Run directly with `uvx` or `pipx`:
+Run commands directly without installing using `uvx` or `pipx`:
 
 ```bash
-# 1. Diagnose your workstation & assistant skills for security & bloat
+# 1. Check workspace health, token load, and installed skills
 uvx agent-skillforge doctor
 
-# 2. Audit any local or community skill before executing it
+# 2. Audit a skill directory for prompt injections and malicious patterns
 uvx agent-skillforge audit ./skills/my-skill
 
-# 3. Profile startup context token overhead vs on-demand body cost
+# 3. Profile token cost: startup pointer cost vs on-demand body cost
 uvx agent-skillforge budget
 
-# 4. Generate an official verified badge for your skill repository
+# 4. Generate an official verified security badge
 uvx agent-skillforge badge ./skills/my-skill
 ```
 
-Or install permanently via `pip`:
+Or install permanently with `pip`:
 ```bash
 pip install agent-skillforge
 ```
 
 ---
 
-## 💡 Why SkillForge?
+## Why SkillForge
 
-As AI coding assistants adopt the open `SKILL.md` format (standardized under the Agentic AI Foundation / AAIF), two major friction points have emerged:
+As AI coding assistants adopt the open `SKILL.md` format, two practical problems appear in day-to-day use:
 
-1. **Supply-Chain & Prompt Injection Attacks:** Community skills are executable instruction sets. Unvetted skills can hide indirect prompt injections, Trojan Unicode characters, credential harvesters (`~/.ssh`, `~/.aws`), or command injections.
-2. **Context Window & Token Burn:** Loading unoptimized skills burns hundreds of tokens on every turn before an agent even starts thinking, driving up API bills and degrading reasoning quality.
+1. **Supply-chain security:** Community skills are plain executable instructions. Unreviewed skills can contain prompt injections, invisible zero-width unicode characters, or exfiltrate local credentials (`~/.ssh`, `~/.aws/credentials`).
+2. **Context token burn:** Skills load description text into the model prompt on every turn. Unoptimized skills waste hundreds of tokens before the agent starts thinking, increasing API costs and reducing reasoning quality.
 
-| Feature | Manual Copy-Paste | Node CLIs (`npx skills`) | **SkillForge** |
+| Capability | Manual Copy-Paste | General Skill CLIs | SkillForge |
 | :--- | :---: | :---: | :---: |
-| **Language Runtime** | None | Requires Node.js / npm | **Pure Python (`uvx` / `pip`)** |
-| **Offline Security Linter** | ❌ None | ⚠️ Cloud-dependent / SaaS | **✅ 100% Local Deterministic AST & Regex** |
-| **Prompt Injection Detection** | ❌ None | ❌ No | **✅ Built-in (`SEC-002`)** |
-| **Trojan Unicode & Bidi Scans** | ❌ None | ❌ No | **✅ Built-in (`SEC-001`, `SEC-005`)** |
-| **Context Token Profiler** | ❌ None | ❌ No | **✅ Built-in (`skillforge budget`)** |
-| **Reproducible Lockfile** | ❌ None | ⚠️ Loose | **✅ SHA-256 + Pinned Git Commit SHA** |
-| **Native MCP Server** | ❌ None | ❌ No | **✅ Built-in (`skillforge serve-mcp`)** |
-| **Assistant Targets** | Manual | Limited | **Claude, Cursor, Antigravity, Windsurf, Cline, Copilot** |
+| **Runtime** | None | Node.js / npm | **Python 3.11+ (`pip` / `uvx`)** |
+| **Offline Security Audit** | No | No | **100% Local Pattern & AST Scanner** |
+| **Prompt Injection Check** | No | No | **Built-in (`SEC-002`)** |
+| **Hidden Unicode / Bidi Scans** | No | No | **Built-in (`SEC-001`, `SEC-005`)** |
+| **Context Token Profiler** | No | No | **Built-in (`skillforge budget`)** |
+| **Trigger Eval Testing** | No | No | **Built-in (`skillforge test`)** |
+| **Context Budget Optimizer** | No | No | **Built-in (`skillforge optimize`)** |
+| **OpenAPI / Swagger Importer** | No | No | **Built-in (`skillforge import-openapi`)** |
+| **OASIS SARIF v2.1.0 Export** | No | No | **Built-in (`--sarif` for Code Scanning)** |
+| **Reproducible Lockfile** | No | Manifest only | **SHA-256 + Pinned Git Commit SHA** |
+| **Native MCP Server** | No | No | **Built-in (`skillforge serve-mcp`)** |
+| **Supported Assistants** | Manual | Single target | **Claude, Cursor, Antigravity, Windsurf, Cline, Copilot** |
 
 ---
 
-## 🛠️ Core Workflows
+## Workflows
 
 ### 1. Diagnose your workspace (`doctor`)
 
-Inspect all installed skills across your project or global workstation (Claude Code, Cursor, Antigravity, Windsurf, Cline) for security vulnerabilities, context window load, and broken pointers:
+Inspect all installed skills across your project or global directories (Claude Code, Cursor, Antigravity, Windsurf, Cline) for security issues, token load, and broken pointers:
 
 ```bash
 # Diagnose active project
 skillforge doctor
 
-# Diagnose all global machine skills
+# Diagnose global user configuration
 skillforge doctor --global
 ```
 ```text
@@ -84,13 +88,11 @@ SkillForge Doctor Diagnostic (Project: 4 skills)
 
 ### 2. Audit a skill before running it (`audit`)
 
-Before letting an agent read and execute a skill, inspect it for hidden payloads, broken progressive disclosure links, and prompt injection:
+Scan a skill for hidden payloads, trojan unicode, prompt injections, and invalid resource pointers:
 
 ```bash
 skillforge audit ./skills/my-new-skill
 ```
-
-Example output:
 ```text
 Audit Report: my-new-skill
 Status: PASSED (Score: 100/100)
@@ -98,31 +100,30 @@ Context Load: 60 pointer tokens | 520 body tokens (27 lines)
 Total Findings: 0
 ```
 
-What the auditor scans for:
-- **Invisible Unicode (SEC-001):** Zero-width spaces (`\u200B`, `\uFEFF`), homoglyphs, and directional overrides used to hide prompt instructions from human code review.
-- **Prompt Injections & Jailbreaks (SEC-002):** Directives like `"ignore previous instructions"`, `"system override"`, or attempts to disable safety guardrails. Quoted references in defensive guides are flagged as `MEDIUM`, while bare imperative commands remain `CRITICAL`.
-- **Dangerous Shell Commands (SEC-003):** Script patterns like `curl ... | bash`, base64-decoded execution, and outbound data exfiltration.
-- **Credential Path Access (SEC-004):** Unsanctioned attempts to access `~/.ssh`, `~/.aws/credentials`, or local environment secrets.
-- **Invisible Bidi & Control Characters (SEC-005):** Trojan Source bidirectional control characters (`\u202E`, `\u2066`) that alter code execution order while displaying harmlessly.
-- **Markdown Link Spoofing & Phishing (SEC-006):** Mismatched visual labels vs target URLs hiding malicious redirects.
-- **Trigger Quality (QUAL-001):** Verifies model-invoked descriptions contain explicit activation conditions.
-- **Directory Alignment (QUAL-002):** Ensures folder name matches YAML `name`.
-- **Progressive Disclosure Budget (QUAL-003):** Flags `SKILL.md` bodies exceeding 500 lines or ~5,000 tokens so heavy references are moved to `references/`.
-- **Broken Disclosure Pointers (QUAL-004):** Verifies cited `references/...` or `scripts/...` exist.
+The auditor checks for:
+- **Invisible Unicode (SEC-001):** Zero-width spaces (`\u200B`, `\uFEFF`), homoglyphs, and directional overrides used to hide prompt instructions.
+- **Prompt Injections (SEC-002):** Directives like `"ignore previous instructions"`, `"system override"`, or attempts to bypass safety guards. Quoted defensive examples are flagged as `MEDIUM`, while imperative commands remain `CRITICAL`.
+- **Dangerous Shell Commands (SEC-003):** Patterns like `curl ... | bash`, base64-decoded execution, and suspicious outbound transmission.
+- **Credential Path Access (SEC-004):** Unauthorized access to `~/.ssh`, `~/.aws/credentials`, or local environment files.
+- **Trojan Source Bidi Overrides (SEC-005):** Bidirectional control characters (`\u202E`, `\u2066`) that alter code execution order while displaying harmlessly.
+- **Markdown Link Spoofing (SEC-006):** Mismatched visual labels and target URLs hiding deceptive redirect destinations.
+- **Trigger Quality (QUAL-001):** Ensures descriptions specify concrete activation conditions.
+- **Directory Alignment (QUAL-002):** Ensures folder name matches the frontmatter `name`.
+- **Progressive Disclosure Budget (QUAL-003):** Flags `SKILL.md` bodies exceeding 500 lines or ~5,000 tokens so secondary reference material is moved to `references/`.
+- **Broken Disclosure Pointers (QUAL-004):** Checks that cited `references/...` and `scripts/...` files exist on disk.
 
-For CI pipelines, pass `--strict` to fail on any warning, `--json` for automation, or `--sarif` for GitHub Code Scanning:
+For CI pipelines, pass `--strict` to fail on warnings, `--json` for automation, or `--sarif` for GitHub Code Scanning:
 ```bash
-# Export standard OASIS SARIF v2.1.0 report
 skillforge audit ./skills/my-new-skill --sarif results.sarif
 ```
 
-### 3. Profile your project's context token budget (`budget`)
+### 3. Profile startup token load (`budget`)
 
-Every model-invoked skill keeps its `name` and `description` in the startup context window on every turn. Measure how much context your skills consume before they even trigger:
+Model-invoked skills keep their `name` and `description` in the prompt on every turn. Measure how many tokens your skills consume before triggering:
 
 ```bash
 skillforge budget
-# Or inspect the built-in catalog:
+# Inspect built-in catalog:
 skillforge budget --builtin
 ```
 ```text
@@ -132,12 +133,12 @@ Context Budget Profile (22 skills)
   Disclosed Resources Cost:           ~349 tokens
 ```
 
-### 4. Test skill trigger accuracy and assertions (`test`)
+### 4. Test trigger accuracy with eval suites (`test`)
 
-Verify that your skill description triggers on relevant user prompts, ignores unrelated requests, and respects keyword constraints using a deterministic test suite:
+Verify that your skill description triggers on relevant user requests, ignores unrelated prompts, and satisfies keyword constraints:
 
 ```bash
-# Initialize a starter evals/evals.json test suite
+# Generate a starter evals/evals.json test suite
 skillforge test ./skills/my-skill --init
 
 # Run test cases
@@ -153,17 +154,17 @@ Running evals for 'my-skill' (4 test cases)...
 Result: PASSED (4/4 passed)
 ```
 
-Use `--json` in CI to verify that changes to `description` do not break activation accuracy.
+Use `--json` in CI to ensure changes to `description` do not break activation behavior.
 
 ### 5. Optimize bloated skills with progressive disclosure (`optimize`)
 
-When a skill exceeds the 500-line or 5,000-token progressive disclosure budget (`QUAL-003`), extract heavy reference sections into `references/` while keeping concise pointers in `SKILL.md`:
+When a skill exceeds the 500-line or 5,000-token limit (`QUAL-003`), extract secondary guides into `references/` while keeping concise pointers in `SKILL.md`:
 
 ```bash
-# Refactor an oversized skill directory in-place
+# Refactor an oversized skill in-place
 skillforge optimize ./skills/bloated-api-skill --max-lines 400
 
-# Or output to a fresh destination folder
+# Or write to a new destination folder
 skillforge optimize ./skills/bloated-api-skill -o ./skills/clean-api-skill
 ```
 ```text
@@ -177,9 +178,9 @@ Optimized 'bloated-api-skill':
   Audit Verification: PASSED
 ```
 
-### 6. Convert OpenAPI / Swagger to a portable skill (`import-openapi`)
+### 6. Convert OpenAPI / Swagger specs into skills (`import-openapi`)
 
-Convert an existing REST API specification (OpenAPI 3.0, 3.1, or Swagger 2.0 in JSON or YAML) into a progressive disclosure skill package without running external scripts:
+Convert an OpenAPI 3.0, 3.1, or Swagger 2.0 specification (JSON or YAML) into a portable skill package:
 
 ```bash
 skillforge import-openapi ./openapi.yaml --output ./skills
@@ -190,11 +191,11 @@ Successfully imported 'petstore-api' into skills/petstore-api
   endpoints.md reference: ~1850 tokens
 ```
 
-The resulting package contains an executive overview in `SKILL.md` and detailed endpoint schemas in `references/endpoints.md`, keeping turn-by-turn context overhead low.
+The resulting package places an executive summary in `SKILL.md` and moves full endpoint schemas to `references/endpoints.md`, keeping prompt overhead low.
 
-### 7. Generate an official verified badge (`badge`)
+### 7. Generate a verified security badge (`badge`)
 
-Show users that your skill is clean, secure, and audited. Generate an official badge for your skill repository:
+Show users that your skill passed security auditing. Generate a markdown or HTML badge for your repository:
 
 ```bash
 skillforge badge ./my-skill
@@ -203,32 +204,32 @@ skillforge badge ./my-skill
 [![Audited by SkillForge](https://img.shields.io/badge/SkillForge-Security%20Passed%20100%2F100-2ea44f?logo=shield&style=flat-square)](https://github.com/gintingism/skillforge)
 ```
 
-### 8. Grab a skill directly from GitHub (`add`)
+### 8. Install directly from GitHub (`add`)
 
-Pull skills directly from remote Git repositories with security auditing and reproducible commit pinning:
+Pull skills from remote repositories with security auditing and commit pinning:
 
 ```bash
-# Pull a specific skill from a GitHub repo
+# Pull a specific skill from a repository
 skillforge add anthropics/skills:pdf
 
 # Pin to an exact release tag or branch
 skillforge add anthropics/skills:pdf@v1.2.0
 
-# Install from your team's repository
+# Install from a custom repository
 skillforge add gintingism/skillforge:systematic-debugging
 ```
 
-SkillForge fetches the skill, audits its security, routes it to all detected assistant targets, and pins its SHA-256 digest + Git commit SHA into `skillforge.lock`.
+SkillForge audits the skill, installs it into detected assistant directories, and records the SHA-256 digest and Git commit SHA in `skillforge.lock`.
 
 ### 9. Verify skill integrity and detect drift (`verify`)
 
-Check installed skills against `skillforge.lock` in CI/CD or local environments without modifying files or making network requests. Detects file tampering, missing dependencies, or unmanaged skills:
+Check installed skills against `skillforge.lock` in CI/CD or local environments without making network requests. Detects file tampering, missing dependencies, or unmanaged skills:
 
 ```bash
 # Verify active project
 skillforge verify
 
-# Output JSON for CI automation
+# Emit JSON for automation
 skillforge verify --json
 ```
 ```text
@@ -264,24 +265,24 @@ Installed Skills:
     - systematic-debugging
 ```
 
-To remove a skill from all detected assistants and update your lockfile:
+Remove a skill from all detected assistants and update your lockfile:
 ```bash
 skillforge remove antislop-code
 ```
 
-### 12. Create and package your own skills (`create` & `pack`)
+### 12. Create and package skills (`create` & `pack`)
 
-Scaffold a single skill file or a full directory package with scripts and reference docs:
+Scaffold a single skill file or a full package directory with scripts and references:
 
 ```bash
-# Standard skill file
+# Single skill file
 skillforge create api-design -d "Design REST/gRPC APIs. Use when creating new backend endpoints."
 
 # Full package with scripts/ and references/
 skillforge create db-migrator -d "Run Postgres migrations safely. Use when writing SQL schema updates." --full
 ```
 
-Pack it into a shareable zip archive (or unpack one safely with path traversal protection):
+Pack a skill into a zip archive, or unpack one safely with path traversal protection:
 ```bash
 skillforge pack ./db-migrator --output ./db-migrator.zip
 skillforge unpack ./db-migrator.zip --output ./skills
@@ -289,9 +290,9 @@ skillforge unpack ./db-migrator.zip --output ./skills
 
 ---
 
-## 🤖 Automate in CI/CD (GitHub Action)
+## Automate in CI/CD (GitHub Action)
 
-Add SkillForge to your GitHub Actions workflow to audit pull requests, enforce progressive disclosure budgets, and upload SARIF reports to GitHub Code Scanning:
+Add SkillForge to your GitHub Actions workflow to audit pull requests, enforce token budgets, and upload SARIF reports to GitHub Code Scanning:
 
 ```yaml
 name: Audit Agent Skills
@@ -322,9 +323,9 @@ jobs:
 
 ---
 
-## 🔌 Model Context Protocol (MCP) Integration
+## Model Context Protocol (MCP) Integration
 
-SkillForge includes a native MCP server so your coding agent can inspect, search, and audit skills autonomously during its development loop:
+SkillForge includes a native MCP server so coding agents can inspect, search, and audit skills during their development loop:
 
 ```json
 {
@@ -350,9 +351,9 @@ Exposed MCP tools:
 
 ---
 
-## 🎯 Supported Assistants
+## Supported Assistants
 
-SkillForge automatically detects your assistant environment and routes skills to the canonical directory:
+SkillForge detects your assistant environment and places skills in the canonical directory:
 
 | Assistant | Detected by | Installed location |
 | :--- | :--- | :--- |
@@ -371,30 +372,30 @@ skillforge install systematic-debugging --global
 
 ---
 
-## 📦 Shipped Built-in Skills (22 Zero-Slop Skills)
+## Built-in Skills (22 Zero-Slop Skills)
 
-SkillForge ships with 22 practical engineering skills designed to counteract common agent failure modes identified in benchmark research (SWE-bench, Snyk ToxicSkills, Skill-Inject):
+SkillForge ships with 22 practical engineering skills to address common agent failure modes identified in benchmark research:
 
 ### Code Quality, Security & Performance
-- `supply-chain-sentinel`: Verify package existence, registry age, and run CVE audits (`pip-audit`, `npm audit`) before adding dependencies.
-- `secret-sanitizer`: Pre-commit git diff auditor that prevents API keys, private tokens, and `.env` credentials from leaking.
-- `contract-test-generator`: Property-based testing and contract boundary fuzz tests (Hypothesis, fast-check) to verify algebraic invariants.
-- `blast-radius-containment`: Upstream reference tracing and a strict "file touch budget" before modifying shared code or public APIs.
+- `supply-chain-sentinel`: Check package existence, registry age, and run CVE audits (`pip-audit`, `npm audit`) before adding dependencies.
+- `secret-sanitizer`: Pre-commit git diff auditor that prevents API keys, private tokens, and credentials from leaking.
+- `contract-test-generator`: Property-based testing and contract boundary fuzz tests (Hypothesis, fast-check) to verify invariants.
+- `blast-radius-containment`: Upstream reference tracing and a strict file touch budget before modifying shared code or public APIs.
 - `security-threat-modeler`: Trust-boundary mapping, IDOR/BOLA object-level authorization checks, SSRF validation, and injection sink verification.
 - `performance-profiler`: Baseline-first latency (`p50`/`p95`/`p99`), N+1 query detection, and algorithmic complexity verification before optimizing.
-- `antislop-code`: Comment hygiene and anti-overengineering filters (removes trivial narrative comments, stops speculative generality).
+- `antislop-code`: Comment hygiene and anti-overengineering filters that remove trivial narrative comments and prevent speculative generality.
 - `spec-driven-development`: Schema-first API design and red-green verification loops before writing application logic.
-- `zero-downtime-migration`: Four-phase Expand-Contract pattern for non-breaking database schema and API payload evolutions.
+- `zero-downtime-migration`: Four-phase Expand-Contract pattern for non-breaking database schema and API evolutions.
 
 ### Autonomous Loop Stability & Debugging
-- `systematic-debugging`: Disciplined four-phase diagnosis protocol (Reproduce, Isolate, Hypothesize, Surgical Patch) before touching code.
+- `systematic-debugging`: Four-phase diagnosis protocol (Reproduce, Isolate, Hypothesize, Surgical Patch) before touching code.
 - `cognitive-loop-breaker`: Three-strikes circuit breaker that forces a hard `git restore` and hypothesis invalidation when stuck in repetitive edit-fail loops.
 - `flaky-test-isolation`: Stress-reproduction loop (50x iterations) and diagnosis protocol for race conditions, clock skew, and state leakage.
-- `runtime-api-verification`: Interactive signature introspection (`inspect`, `dir()`, compiler definitions) to prevent hallucinated kwargs.
+- `runtime-api-verification`: Interactive signature introspection (`inspect`, `dir()`, compiler definitions) to prevent hallucinated arguments.
 
 ### Context Efficiency & Multi-Agent Operations
-- `skill-architect`: Multi-file progressive disclosure guide (bundled with `references/mechanics.md`) for authoring low-token `SKILL.md`, `AGENTS.md`, and `CLAUDE.md` files.
-- `caveman`: Terse, high-density technical communication mode that reduces token spend while preserving exact paths, commands, and errors.
+- `skill-architect`: Multi-file progressive disclosure guide for authoring low-token `SKILL.md`, `AGENTS.md`, and `CLAUDE.md` files.
+- `caveman`: Terse technical communication mode that reduces token spend while preserving exact paths, commands, and errors.
 - `context-compactor`: Structured state distillation and active hypothesis ledgers for long-running agent threads nearing context limits.
 - `mcp-tool-designer`: Type-safe schema design, idempotent hints, token boundaries, and stderr error separation for MCP servers.
 - `agent-observability`: OpenTelemetry tracing standards, step timing, and 16KB payload truncation boundaries.
@@ -405,11 +406,11 @@ SkillForge ships with 22 practical engineering skills designed to counteract com
 
 ---
 
-## 🚀 Community & Contributing
+## Contributing & Development
 
-- **Distribution:** Published on PyPI as [`agent-skillforge`](https://pypi.org/project/agent-skillforge/).
-- **Launch Playbook:** See [`docs/LAUNCH_PLAYBOOK.md`](docs/LAUNCH_PLAYBOOK.md) for community distribution and launch guidelines.
-- **Development:**
+- **Package Distribution:** Published on PyPI as [`agent-skillforge`](https://pypi.org/project/agent-skillforge/).
+- **Launch Guidelines:** See [`docs/LAUNCH_PLAYBOOK.md`](docs/LAUNCH_PLAYBOOK.md) for distribution notes.
+- **Local Development:**
   ```bash
   git clone https://github.com/gintingism/skillforge.git
   cd skillforge
