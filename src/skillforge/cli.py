@@ -13,7 +13,10 @@ import typer
 
 from .adapters import detect_adapters
 from .errors import SecurityAuditError, SkillForgeError
+from .evals import init_evals, run_evals
 from .mcp_server import run_mcp_server
+from .openapi import import_openapi
+from .optimizer import optimize_skill
 from .registry import BuiltinRegistry, CompositeRegistry, GitRemoteRegistry, LocalRegistry, Registry
 from .security import Severity, SkillAuditor, audit_path
 from .skill import Skill, SkillPackage
@@ -61,6 +64,7 @@ def audit(
     path: Path,
     strict: bool = typer.Option(False, "--strict", help="Fail on any warning or low-severity finding."),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+    sarif_output: Path | None = typer.Option(None, "--sarif", help="Emit OASIS SARIF v2.1.0 report for GitHub Code Scanning."),
 ) -> None:
     """Audit a skill for prompt injection, zero-width unicode, and security issues."""
     try:
@@ -71,6 +75,12 @@ def audit(
         else:
             typer.echo(f"Audit error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
+
+    if sarif_output:
+        sarif_output.parent.mkdir(parents=True, exist_ok=True)
+        sarif_output.write_text(json.dumps(report.to_sarif(), indent=2), encoding="utf-8")
+        if not json_output:
+            typer.echo(f"Wrote SARIF report to {sarif_output}")
 
     if json_output:
         typer.echo(json.dumps(report.to_dict()))
@@ -205,6 +215,111 @@ def unpack(archive: Path, output: Path = typer.Option(Path("."), "--output", "-o
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(f"Unpacked skill '{package.skill.name}' into {output}")
+
+
+@app.command("import-openapi")
+def import_openapi_cmd(
+    spec_path: Path = typer.Argument(..., help="Path to OpenAPI/Swagger JSON or YAML specification file."),
+    output_dir: Path = typer.Option(Path("./skills"), "--output", "-o", help="Destination skills directory."),
+    name: str | None = typer.Option(None, "--name", "-n", help="Optional override for skill name."),
+) -> None:
+    """Convert an OpenAPI / Swagger specification into a progressive disclosure skill package."""
+    try:
+        pkg = import_openapi(spec_path, output_dir, skill_name=name)
+        dest = output_dir / pkg.skill.name
+        typer.echo(f"Successfully imported '{pkg.skill.name}' into {dest}")
+        typer.echo(f"  SKILL.md:               {pkg.skill.body_lines} lines (~{pkg.skill.body_tokens} body tokens)")
+        typer.echo(f"  endpoints.md reference: ~{pkg.resource_tokens} tokens")
+    except (SkillForgeError, OSError) as exc:
+        typer.echo(f"Import error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("test")
+def test_skill(
+    path: Path = typer.Argument(Path("."), help="Path to skill directory or SKILL.md file."),
+    init: bool = typer.Option(False, "--init", help="Generate starter evals/evals.json test suite."),
+    evals_path: Path | None = typer.Option(None, "--evals", help="Path to custom evals.json test suite file."),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+) -> None:
+    """Run trigger accuracy and output assertions against an evals.json test suite."""
+    try:
+        if init:
+            target_file = init_evals(path)
+            typer.echo(f"Initialized eval suite in {target_file}")
+            return
+
+        report = run_evals(path, evals_path=evals_path)
+    except (SkillForgeError, OSError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"passed": False, "error": str(exc)}))
+        else:
+            typer.echo(f"Eval error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if json_output:
+        typer.echo(json.dumps(report.to_dict(), indent=2))
+    else:
+        typer.echo(f"Running evals for '{report.skill_name}' ({report.total_cases} test cases)...")
+        for r in report.results:
+            status = "PASS" if r.passed else "FAIL"
+            typer.echo(f"  [{status}] {r.case_id}: \"{r.prompt[:50]}\"")
+            if not r.passed:
+                typer.echo(f"         Reason: {r.reason}", err=True)
+
+        status_str = "PASSED" if report.passed else "FAILED"
+        typer.echo(f"\nResult: {status_str} ({report.passed_cases}/{report.total_cases} passed)")
+
+    if not report.passed:
+        raise typer.Exit(code=1)
+
+
+@app.command("optimize")
+def optimize_skill_cmd(
+    path: Path = typer.Argument(Path("."), help="Path to skill directory or SKILL.md file."),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Optional output destination directory."),
+    max_lines: int = typer.Option(400, "--max-lines", help="Maximum lines for SKILL.md body."),
+    max_tokens: int = typer.Option(4000, "--max-tokens", help="Maximum token count for SKILL.md body."),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+) -> None:
+    """Refactor a bloated SKILL.md into progressive disclosure references."""
+    try:
+        result = optimize_skill(
+            package_dir=path,
+            output_dir=output,
+            max_lines=max_lines,
+            max_tokens=max_tokens,
+        )
+    except (SkillForgeError, OSError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"success": False, "error": str(exc)}))
+        else:
+            typer.echo(f"Optimization error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if json_output:
+        typer.echo(json.dumps(result.to_dict(), indent=2))
+        return
+
+    typer.echo(f"Optimized '{result.skill_name}':")
+    typer.echo(f"  Lines:  {result.original_lines} -> {result.optimized_lines} ({result.lines_saved} lines saved)")
+    typer.echo(f"  Tokens: ~{result.original_tokens} -> ~{result.optimized_tokens} ({result.tokens_saved} tokens saved)")
+
+    if result.extracted_references:
+        typer.echo("  Extracted References:")
+        for ref in result.extracted_references:
+            typer.echo(f"    - {ref}")
+    else:
+        typer.echo("  No sections required extraction (already within budget).")
+
+    if result.saved_path:
+        typer.echo(f"  Destination: {result.saved_path}")
+
+    status_str = "PASSED" if result.passed_audit else "FAILED"
+    typer.echo(f"  Audit Verification: {status_str}")
+    if result.audit_findings:
+        for finding in result.audit_findings:
+            typer.echo(f"    [Finding] {finding}")
 
 
 @app.command()

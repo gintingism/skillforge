@@ -110,9 +110,10 @@ What the auditor scans for:
 - **Progressive Disclosure Budget (QUAL-003):** Flags `SKILL.md` bodies exceeding 500 lines or ~5,000 tokens so heavy references are moved to `references/`.
 - **Broken Disclosure Pointers (QUAL-004):** Verifies cited `references/...` or `scripts/...` exist.
 
-For CI pipelines, pass `--strict` to fail on any warning, or `--json` for automation:
+For CI pipelines, pass `--strict` to fail on any warning, `--json` for automation, or `--sarif` for GitHub Code Scanning:
 ```bash
-skillforge audit ./skills/my-new-skill --strict --json
+# Export standard OASIS SARIF v2.1.0 report
+skillforge audit ./skills/my-new-skill --sarif results.sarif
 ```
 
 ### 3. Profile your project's context token budget (`budget`)
@@ -131,7 +132,67 @@ Context Budget Profile (22 skills)
   Disclosed Resources Cost:           ~349 tokens
 ```
 
-### 4. Generate an official verified badge (`badge`)
+### 4. Test skill trigger accuracy and assertions (`test`)
+
+Verify that your skill description triggers on relevant user prompts, ignores unrelated requests, and respects keyword constraints using a deterministic test suite:
+
+```bash
+# Initialize a starter evals/evals.json test suite
+skillforge test ./skills/my-skill --init
+
+# Run test cases
+skillforge test ./skills/my-skill
+```
+```text
+Running evals for 'my-skill' (4 test cases)...
+  [PASS] trigger_positive_core_my_skill: "Please help me with my-skill following our workflow."
+  [PASS] trigger_positive_task: "I need to execute a task: my skill workflow description"
+  [PASS] suppress_negative_unrelated_math: "Calculate the Fibonacci sequence for n=30 in Python."
+  [PASS] suppress_negative_greeting: "Hello there, what is the weather like in Tokyo today?"
+
+Result: PASSED (4/4 passed)
+```
+
+Use `--json` in CI to verify that changes to `description` do not break activation accuracy.
+
+### 5. Optimize bloated skills with progressive disclosure (`optimize`)
+
+When a skill exceeds the 500-line or 5,000-token progressive disclosure budget (`QUAL-003`), extract heavy reference sections into `references/` while keeping concise pointers in `SKILL.md`:
+
+```bash
+# Refactor an oversized skill directory in-place
+skillforge optimize ./skills/bloated-api-skill --max-lines 400
+
+# Or output to a fresh destination folder
+skillforge optimize ./skills/bloated-api-skill -o ./skills/clean-api-skill
+```
+```text
+Optimized 'bloated-api-skill':
+  Lines:  680 -> 240 (440 lines saved)
+  Tokens: ~6200 -> ~2100 (4100 tokens saved)
+  Extracted References:
+    - references/database-guidelines.md
+    - references/api-endpoints-manual.md
+  Destination: ./skills/clean-api-skill
+  Audit Verification: PASSED
+```
+
+### 6. Convert OpenAPI / Swagger to a portable skill (`import-openapi`)
+
+Convert an existing REST API specification (OpenAPI 3.0, 3.1, or Swagger 2.0 in JSON or YAML) into a progressive disclosure skill package without running external scripts:
+
+```bash
+skillforge import-openapi ./openapi.yaml --output ./skills
+```
+```text
+Successfully imported 'petstore-api' into skills/petstore-api
+  SKILL.md:               28 lines (~320 body tokens)
+  endpoints.md reference: ~1850 tokens
+```
+
+The resulting package contains an executive overview in `SKILL.md` and detailed endpoint schemas in `references/endpoints.md`, keeping turn-by-turn context overhead low.
+
+### 7. Generate an official verified badge (`badge`)
 
 Show users that your skill is clean, secure, and audited. Generate an official badge for your skill repository:
 
@@ -142,7 +203,7 @@ skillforge badge ./my-skill
 [![Audited by SkillForge](https://img.shields.io/badge/SkillForge-Security%20Passed%20100%2F100-2ea44f?logo=shield&style=flat-square)](https://github.com/gintingism/skillforge)
 ```
 
-### 5. Grab a skill directly from GitHub (`add`)
+### 8. Grab a skill directly from GitHub (`add`)
 
 Pull skills directly from remote Git repositories with security auditing and reproducible commit pinning:
 
@@ -159,7 +220,7 @@ skillforge add gintingism/skillforge:systematic-debugging
 
 SkillForge fetches the skill, audits its security, routes it to all detected assistant targets, and pins its SHA-256 digest + Git commit SHA into `skillforge.lock`.
 
-### 6. Verify skill integrity and detect drift (`verify`)
+### 9. Verify skill integrity and detect drift (`verify`)
 
 Check installed skills against `skillforge.lock` in CI/CD or local environments without modifying files or making network requests. Detects file tampering, missing dependencies, or unmanaged skills:
 
@@ -177,7 +238,7 @@ skillforge verify --json
 Verification PASSED: 2 skill(s) match skillforge.lock.
 ```
 
-### 7. Compare changes before updating (`diff`)
+### 10. Compare changes before updating (`diff`)
 
 Inspect diffs between local skills and upstream repositories, or compare two skill versions:
 
@@ -186,7 +247,7 @@ skillforge diff ./skills/my-skill
 skillforge diff my-skill gintingism/skillforge:my-skill
 ```
 
-### 8. Manage installed skills (`list` & `remove`)
+### 11. Manage installed skills (`list` & `remove`)
 
 See which skills are active across your editor targets:
 
@@ -208,7 +269,7 @@ To remove a skill from all detected assistants and update your lockfile:
 skillforge remove antislop-code
 ```
 
-### 9. Create and package your own skills (`create` & `pack`)
+### 12. Create and package your own skills (`create` & `pack`)
 
 Scaffold a single skill file or a full directory package with scripts and reference docs:
 
@@ -230,7 +291,7 @@ skillforge unpack ./db-migrator.zip --output ./skills
 
 ## 🤖 Automate in CI/CD (GitHub Action)
 
-Add SkillForge to your GitHub Actions workflow to audit every Pull Request:
+Add SkillForge to your GitHub Actions workflow to audit pull requests, enforce progressive disclosure budgets, and upload SARIF reports to GitHub Code Scanning:
 
 ```yaml
 name: Audit Agent Skills
@@ -239,6 +300,9 @@ on: [pull_request, push]
 jobs:
   audit:
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - name: Run SkillForge Security & Token Linter
@@ -247,6 +311,13 @@ jobs:
           path: './skills'
           strict: 'true'
           budget: 'true'
+          sarif: 'skillforge-findings.sarif'
+
+      - name: Upload SARIF to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'skillforge-findings.sarif'
 ```
 
 ---

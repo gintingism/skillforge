@@ -22,6 +22,10 @@ inputs:
     description: 'Profile context token overhead and progressive disclosure limits'
     required: false
     default: 'false'
+  sarif:
+    description: 'Export audit findings as OASIS SARIF v2.1.0 for GitHub Code Scanning'
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
@@ -44,7 +48,11 @@ runs:
         if [ "${{ inputs.strict }}" = "true" ]; then
           STRICT_FLAG="--strict"
         fi
-        skillforge audit "${{ inputs.path }}" $STRICT_FLAG
+        SARIF_FLAG=""
+        if [ -n "${{ inputs.sarif }}" ]; then
+          SARIF_FLAG="--sarif ${{ inputs.sarif }}"
+        fi
+        skillforge audit "${{ inputs.path }}" $STRICT_FLAG $SARIF_FLAG
 
     - name: Run SkillForge Doctor
       if: ${{ inputs.doctor == 'true' }}

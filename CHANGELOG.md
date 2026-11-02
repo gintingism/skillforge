@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.2 - 2026-11-02
+
+- Added OASIS SARIF v2.1.0 report generation to `skillforge audit --sarif <file.sarif>` for direct integration with GitHub Code Scanning.
+- Added `skillforge import-openapi` command to convert OpenAPI 3.0, 3.1, and Swagger 2.0 specifications (JSON and YAML) into progressive disclosure skill packages.
+- Added `skillforge test` command and testing harness supporting `evals/evals.json` test suites for trigger accuracy, positive activation, and negative suppression assertions.
+- Added `skillforge optimize` context budget optimizer that refactors oversized `SKILL.md` documents exceeding `QUAL-003` into clean progressive disclosure references.
+- Updated composite GitHub Action (`action.yml`) with native `sarif` parameter for automated security scanning in pull requests.
+
 ## 0.4.1 - 2026-11-01
 
 - Added `skillforge badge` command to generate official verified shields.io badges for skill repositories (Markdown, HTML, JSON).

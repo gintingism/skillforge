@@ -107,6 +107,75 @@ class AuditReport:
                     lines.append(f"      Snippet: {f.snippet.strip()}")
         return "\n".join(lines)
 
+    def to_sarif(self) -> dict[str, Any]:
+        """Convert findings to OASIS SARIF v2.1.0 format for GitHub Code Scanning."""
+        rule_meta: dict[str, tuple[str, str]] = {
+            "SEC-001": ("Invisible Unicode Detection", "Detects zero-width and invisible unicode characters hiding instructions."),
+            "SEC-002": ("Prompt Injection Directive", "Detects instructions attempting to override system prompts or jailbreak the agent."),
+            "SEC-003": ("Dangerous Command Execution", "Detects destructive shell pipelines, reverse shells, or remote script piped to bash."),
+            "SEC-004": ("Credential Path Access", "Detects unauthorized attempts to access ~/.ssh, ~/.aws, or environment secrets."),
+            "SEC-005": ("Trojan Source Bidi Characters", "Detects bidirectional unicode control characters that alter execution order."),
+            "SEC-006": ("Markdown Link Spoofing", "Detects deceptive markdown links with mismatched labels and destinations."),
+            "QUAL-001": ("Trigger Quality", "Checks whether skill descriptions include explicit activation conditions."),
+            "QUAL-002": ("Directory Alignment", "Checks whether directory name matches frontmatter name."),
+            "QUAL-003": ("Context Budget Limit", "Flags bloated skills exceeding recommended token and line limits."),
+            "QUAL-004": ("Broken Resource Pointer", "Checks whether cited scripts or references exist in the package."),
+            "QUAL-006": ("Applicability Hijacking", "Flags overbroad trigger descriptions claiming all tasks."),
+        }
+        sarif_rules: list[dict[str, Any]] = []
+        for rid, (rname, rdesc) in sorted(rule_meta.items()):
+            sarif_rules.append({
+                "id": rid,
+                "name": rname,
+                "shortDescription": {"text": rdesc},
+                "defaultConfiguration": {
+                    "level": "error" if rid.startswith("SEC") else "warning"
+                },
+            })
+
+        results: list[dict[str, Any]] = []
+        for f in self.findings:
+            level = "error" if f.severity in (Severity.CRITICAL, Severity.HIGH) else (
+                "warning" if f.severity == Severity.MEDIUM else "note"
+            )
+            loc: dict[str, Any] = {
+                "physicalLocation": {
+                    "artifactLocation": {
+                        "uri": f.file
+                    }
+                }
+            }
+            if f.line is not None:
+                region: dict[str, Any] = {"startLine": f.line}
+                if f.snippet:
+                    region["snippet"] = {"text": f.snippet.strip()}
+                loc["physicalLocation"]["region"] = region
+
+            results.append({
+                "ruleId": f.rule_id,
+                "level": level,
+                "message": {"text": f.message},
+                "locations": [loc],
+            })
+
+        return {
+            "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+            "version": "2.1.0",
+            "runs": [
+                {
+                    "tool": {
+                        "driver": {
+                            "name": "SkillForge",
+                            "version": "0.4.1",
+                            "informationUri": "https://github.com/gintingism/skillforge",
+                            "rules": sarif_rules,
+                        }
+                    },
+                    "results": results,
+                }
+            ],
+        }
+
 
 # Regex patterns for security checks
 _INVISIBLE_UNICODE_CHARS = re.compile(
