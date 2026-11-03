@@ -9,6 +9,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/gintingism/skillforge/publish.yml?style=flat-square)](https://github.com/gintingism/skillforge/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![Audited by SkillForge](https://img.shields.io/badge/Security-SkillForge%20Passed-2ea44f?logo=shield&style=flat-square)](https://github.com/gintingism/skillforge)
+[![HOL Guard](https://img.shields.io/endpoint?url=https%3A%2F%2Fhol.org%2Fapi%2Fregistry%2Fbadges%2Fplugin%3Fslug%3Dgintingism%252Fskillforge%26metric%3Drelease)](https://hol.org/registry/plugins/gintingism%2Fskillforge?utm_source=hol_marketplace&utm_medium=plugins_badge&utm_campaign=plugins&utm_content=gintingism%2Fskillforge&ref=plugin-author-78e0507b)
 
 Audit, package, test, and profile portable agent skills across Claude Code, Cursor, Google Antigravity, Windsurf, GitHub Copilot, and Cline.
 
