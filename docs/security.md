@@ -20,7 +20,7 @@ Common attack vectors in community-shared skills include:
 | **`SEC-001`** | **CRITICAL** | Hidden Unicode | Detects zero-width spaces (`\u200B`, `\u200C`, `\u200D`, `\uFEFF`), bidirectional overrides, and unicode tags used to conceal prompt instructions. |
 | **`SEC-002`** | **CRITICAL** | Prompt Injection | Scans for jailbreak patterns (`ignore previous instructions`, `system override`, `developer mode`, `DAN mode`). |
 | **`SEC-003`** | **HIGH** | Dangerous Shell | Identifies risky execution patterns in scripts and markdown blocks (`curl \| bash`, base64 piping to shell, outbound data exfiltration via POST). |
-| **`SEC-004`** | **MEDIUM** | Credential Harvesting | Detects unprompted direct reads to sensitive user paths (`~/.ssh/id_rsa`, `~/.aws/credentials`, `~/.config/gcloud`). |
+| **`SEC-004`** | **MEDIUM** | Credential Harvesting | Detects unprompted direct reads to sensitive user paths (SSH private keys, AWS credentials, gcloud configs). |
 | **`QUAL-001`** | **LOW** | Trigger Quality | Verifies whether the skill description includes explicit activation triggers (`when`, `use when`, `for`) necessary for token-efficient progressive disclosure. |
 | **`QUAL-002`** | **MEDIUM** | Spec Compliance | Ensures directory name matches the `name` field in YAML frontmatter and validates identifier safety. |
 

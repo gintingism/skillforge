@@ -420,4 +420,12 @@ SkillForge ships with 22 practical engineering skills to address common agent fa
   mypy src
   ```
 
+---
+
+## Listed on HOL Plugins
+
+[SkillForge on HOL Plugins](https://hol.org/registry/plugins/gintingism%2Fskillforge?utm_source=hol_marketplace&utm_medium=plugins_badge&utm_campaign=listed_link&utm_content=gintingism%2Fskillforge) shows the latest scan, trust score and release evidence for this plugin.
+
+---
+
 License: [MIT](LICENSE)

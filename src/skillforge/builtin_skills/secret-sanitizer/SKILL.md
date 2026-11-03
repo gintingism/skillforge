@@ -23,7 +23,7 @@ Scan git diffs and staged changes for high-entropy tokens and signature prefixes
 | **OpenAI API Keys** | `sk-[A-Za-z0-9]{48}` | `sk-` |
 | **Google Cloud / Gemini** | `AIzaSy[A-Za-z0-9_-]{33}` | `AIzaSy` |
 | **AWS Credentials** | `AKIA[0-9A-Z]{16}` | `AKIA` |
-| **Private Keys** | `-----BEGIN (RSA|EC|OPENSSH|PRIVATE) KEY-----` | `-----BEGIN` |
+| **Private Keys** | `-----BEGIN (RSA|EC|PRIVATE) KEY-----` | `-----BEGIN` |
 
 ## 2. Pre-Commit Staging Audit Procedure
 
@@ -33,7 +33,7 @@ Scan git diffs and staged changes for high-entropy tokens and signature prefixes
    Ensure `.env`, `.env.local`, `.env.*.local`, `*.pem`, `*.key`, `*.pfx`, and credentials caches (`.aws/`, `.gcloud/`) are explicitly ignored.
 3. **Check Staged File List**:
    `git diff --cached --name-only`
-   Reject any file matching `.env*`, `credentials.json`, `id_rsa`, or service account keys.
+   Reject any file matching `.env*`, `credentials.json`, private key files (`*.pem`, `*.key`), or service account secrets.
 
 ## 3. Redaction & Remediation Rule
 
