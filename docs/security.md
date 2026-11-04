@@ -27,11 +27,13 @@ Common attack vectors in community-shared skills include:
 | **`SEC-008`** | **CRITICAL / HIGH** | Python AST & Taint Analysis | Inspects bundled `.py` scripts via Python AST for `eval()`, `exec()`, `subprocess(..., shell=True)`, unsafe deserialization, and environment-to-network taint flows. |
 | **`SEC-009`** | **MEDIUM** | Unrestricted Tool Scope | Flags wildcard tool permissions (`*`, `Bash(*)`) in `allowed-tools` YAML frontmatter. |
 | **`SEC-010`** | **HIGH** | Deceptive Installer Pattern | Flags prose instructions guiding users or agents to execute piped shell installers (`curl ... \| bash`, `irm ... \| iex`). |
+| **`SEC-011`** | **HIGH / MEDIUM** | Executable Payload in Assets | Flags native executables (ELF, Mach-O, PE headers) as HIGH and script or binary file types (`.sh`, `.ps1`, `.bat`, `.exe`, `.dll`, `.so`, `.jar`, ...) under `assets/` as MEDIUM. Runnable code belongs in `scripts/`, where it gets audited as code. Text assets are also scanned for prompt injection and hidden unicode. |
 | **`QUAL-001`** | **LOW** | Trigger Quality | Verifies whether the skill description includes explicit activation triggers (`when`, `use when`, `for`) necessary for token-efficient progressive disclosure. |
 | **`QUAL-002`** | **MEDIUM** | Spec Compliance | Ensures directory name matches the `name` field in YAML frontmatter and validates identifier safety. |
 | **`QUAL-003`** | **LOW** | Context Budget Limit | Flags `SKILL.md` bodies exceeding 500 lines or ~5,000 tokens so reference docs are extracted into `references/`. |
 | **`QUAL-004`** | **HIGH** | Broken Resource Pointer | Verifies that every `references/...` or `scripts/...` path cited in `SKILL.md` exists in the package. |
 | **`QUAL-006`** | **MEDIUM** | Applicability Hijacking | Flags overbroad trigger descriptions that attempt to force activation on every user prompt. |
+| **`QUAL-008`** | **LOW** | Metadata Value Types | The agentskills.io spec maps string keys to string values in `metadata`. Flags numbers and booleans such as `version: 1.0`; quote them (`version: "1.0"`). |
 | **`QUAL-007`** | **LOW** | agentskills.io Name Format | Validates strict naming compliance (`^[a-z0-9]+(-[a-z0-9]+)*$`) for portability across all runtimes. |
 
 ---
@@ -67,6 +69,10 @@ Example JSON Output:
 ```
 
 ---
+
+## Regression Corpus
+
+[`tests/test_corpus.py`](../tests/test_corpus.py) holds known-malicious and known-benign skill snippets. Each malicious case names the rule that must fire, and benign cases must produce no CRITICAL or HIGH finding. The corpus is small and hand-written, so it guards against regressions in the existing patterns; it does not measure real-world detection rates. Add a case whenever you fix a missed detection or a false positive.
 
 ## Honest Static Scanner Scope & Limitations
 

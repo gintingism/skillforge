@@ -55,6 +55,7 @@ As AI coding assistants adopt the open `SKILL.md` format, two practical problems
 | **Offline Security Audit** | No | No | **100% Local Pattern & AST Scanner** |
 | **Prompt Injection Check** | No | No | **Built-in (`SEC-002`)** |
 | **Deceptive Installer Check** | No | No | **Built-in (`SEC-010`)** |
+| **Executable-in-Assets Check** | No | No | **Built-in (`SEC-011`)** |
 | **Hidden Unicode / Bidi Scans** | No | No | **Built-in (`SEC-001`)** |
 | **Python AST & Taint Tracking** | No | No | **Built-in (`SEC-008`)** |
 | **Link Phishing / Spoofing** | No | No | **Built-in (`SEC-007`)** |
@@ -459,7 +460,7 @@ SkillForge ships with 26 practical engineering skills to address common agent fa
 
 SkillForge provides deterministic, 100% offline static auditing to catch dangerous instruction patterns before skills run:
 
-- **What SkillForge Catches:** Malicious shell pipelines (`curl | bash`, `powershell -enc`), reverse shells, unauthorized file reads (`~/.ssh`, `~/.aws`), Python AST taint flows (environment tokens passing into network requests), zero-width unicode obfuscation, deceptive link targets, and context-window token bloat.
+- **What SkillForge Catches:** Malicious shell pipelines (`curl | bash`, `irm | iex`), reverse shells, unauthorized file reads (`~/.ssh`, `~/.aws`), Python AST taint flows (environment tokens passing into network requests), zero-width unicode obfuscation, deceptive link targets, executables hidden in `assets/`, and context-window token bloat. A small regression corpus in `tests/test_corpus.py` guards these patterns; it is not a measurement of real-world detection rates.
 - **What Requires Human Review & Sandboxes:** Pure natural-language policy evasion (instructions that subtly coax models into biased or non-compliant decisions without executable code or known jailbreak keywords) cannot be reliably detected by regex or AST analysis alone. We recommend combining SkillForge static audits with runtime OS sandboxing and requiring human confirmation for irreversible external actions.
 
 ---

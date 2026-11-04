@@ -123,6 +123,8 @@ class AuditReport:
             "SEC-008": ("Python AST Dangerous Call or Taint Flow", "Detects dangerous Python AST calls (eval, exec, shell=True, unsafe deserialization) or env-to-network taint."),
             "SEC-009": ("Unrestricted Tool Scope", "Flags wildcard tool permissions (such as '*' or 'Bash(*)') in YAML frontmatter."),
             "SEC-010": ("Markdown-as-Installer Deceptive Instruction", "Detects instructions prompting the user or agent to execute unverified install scripts or remote terminal pipelines."),
+            "SEC-011": ("Executable Payload in Assets", "Detects native executables or script file types stored under assets/ instead of scripts/."),
+            "QUAL-008": ("Metadata Value Types", "Checks that metadata maps string keys to string values as the agentskills.io spec requires."),
             "QUAL-001": ("Trigger Quality", "Checks whether skill descriptions include explicit activation conditions."),
             "QUAL-002": ("Directory Alignment", "Checks whether directory name matches frontmatter name."),
             "QUAL-003": ("Context Budget Limit", "Flags bloated skills exceeding recommended token and line limits."),
@@ -287,7 +289,12 @@ _MARKDOWN_INSTALLER_PATTERNS: list[re.Pattern[str]] = [
     re.compile(
         r"(?i)\b(?:curl|wget)\b[^\n`]+(?:\|\s*(?:bash|sh|zsh|powershell|pwsh)|>\s*/tmp/[^\n`]+\s*&&\s*(?:bash|sh))"
     ),
+    re.compile(
+        r"(?i)\b(?:irm|iwr|invoke-restmethod|invoke-webrequest)\b[^\n`]*\|\s*(?:iex|invoke-expression)\b"
+    ),
 ]
+_EXECUTABLE_MAGIC = (b"\x7fELF", b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf", b"\xce\xfa\xed\xfe", b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe")
+_EXECUTABLE_ASSET_SUFFIXES = (".exe", ".dll", ".so", ".dylib", ".jar", ".sh", ".bat", ".cmd", ".ps1", ".scr", ".msi")
 _SPEC_NAME_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 
 _NETWORK_MODULES = frozenset({
@@ -423,6 +430,36 @@ class _PythonASTScanner(ast.NodeVisitor):
 class SkillAuditor:
     """Security and compliance auditor for SKILL.md and skill packages."""
 
+    def _scan_asset(self, rel_path: str, data: bytes) -> list[AuditFinding]:
+        """Flag executable payloads in assets/ and scan text assets like any other prose."""
+        file_label = f"assets/{rel_path}"
+        findings: list[AuditFinding] = []
+        is_pe = data.startswith(b"MZ") and b"PE\x00\x00" in data[:1024]
+        if is_pe or data.startswith(_EXECUTABLE_MAGIC):
+            findings.append(
+                AuditFinding(
+                    rule_id="SEC-011",
+                    severity=Severity.HIGH,
+                    message="assets/ contains a native executable (PE, ELF, or Mach-O header); assets should be static data",
+                    file=file_label,
+                )
+            )
+        elif rel_path.lower().endswith(_EXECUTABLE_ASSET_SUFFIXES):
+            findings.append(
+                AuditFinding(
+                    rule_id="SEC-011",
+                    severity=Severity.MEDIUM,
+                    message="assets/ contains an executable or script file type; place runnable code in scripts/ so it is audited as code",
+                    file=file_label,
+                )
+            )
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            return findings
+        findings.extend(self._scan_text(text, file_label))
+        return findings
+
     def audit_package(self, package: SkillPackage, *, check_resources: bool = True) -> AuditReport:
         """Audit an entire skill package."""
         target_name = package.skill.name or (package.source_dir.name if package.source_dir else "unknown")
@@ -529,6 +566,28 @@ class SkillAuditor:
 
         for rel_path, content in package.references.items():
             findings.extend(self._scan_text(content, f"references/{rel_path}"))
+
+        for rel_path, data in package.assets.items():
+            findings.extend(self._scan_asset(rel_path, data))
+
+        bad_metadata = [
+            f"{key!r}: {value!r}"
+            for key, value in package.skill.metadata.items()
+            if not isinstance(key, str) or not isinstance(value, str)
+        ]
+        if bad_metadata:
+            findings.append(
+                AuditFinding(
+                    rule_id="QUAL-008",
+                    severity=Severity.LOW,
+                    message=(
+                        "metadata must map string keys to string values per the agentskills.io spec; "
+                        "quote numbers and booleans (for example version: \"1.0\")"
+                    ),
+                    file="SKILL.md",
+                    snippet=bad_metadata[0],
+                )
+            )
 
         return AuditReport(
             target=target_name,
