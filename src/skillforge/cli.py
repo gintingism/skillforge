@@ -955,3 +955,8 @@ def remove(
 def serve_mcp() -> None:
     """Serve SkillForge over MCP stdio."""
     run_mcp_server()
+
+
+if __name__ == "__main__":
+    app()
+

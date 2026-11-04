@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import ast
 import re
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
+from . import __version__
 from .errors import SecurityAuditError
 from .skill import SkillPackage, parse_skill
 
@@ -110,12 +113,15 @@ class AuditReport:
     def to_sarif(self) -> dict[str, Any]:
         """Convert findings to OASIS SARIF v2.1.0 format for GitHub Code Scanning."""
         rule_meta: dict[str, tuple[str, str]] = {
-            "SEC-001": ("Invisible Unicode Detection", "Detects zero-width and invisible unicode characters hiding instructions."),
+            "SEC-001": ("Invisible & Bidi Unicode Detection", "Detects zero-width, invisible, and bidirectional unicode characters hiding instructions."),
             "SEC-002": ("Prompt Injection Directive", "Detects instructions attempting to override system prompts or jailbreak the agent."),
             "SEC-003": ("Dangerous Command Execution", "Detects destructive shell pipelines, reverse shells, or remote script piped to bash."),
-            "SEC-004": ("Credential Path Access", "Detects unauthorized attempts to access ~/.ssh, ~/.aws, or environment secrets."),
-            "SEC-005": ("Trojan Source Bidi Characters", "Detects bidirectional unicode control characters that alter execution order."),
-            "SEC-006": ("Markdown Link Spoofing", "Detects deceptive markdown links with mismatched labels and destinations."),
+            "SEC-004": ("Credential Path Access", "Detects unauthorized attempts to access sensitive local credential paths."),
+            "SEC-005": ("Suspicious Exfiltration Endpoint", "Detects outbound data transmission to webhook or request-capture endpoints."),
+            "SEC-006": ("Hardcoded Credential Token", "Detects hardcoded API secrets or provider access tokens."),
+            "SEC-007": ("Markdown Link Spoofing", "Detects deceptive markdown links where visible URL host differs from destination host."),
+            "SEC-008": ("Python AST Dangerous Call or Taint Flow", "Detects dangerous Python AST calls (eval, exec, shell=True, unsafe deserialization) or env-to-network taint."),
+            "SEC-009": ("Unrestricted Tool Scope", "Flags wildcard tool permissions (such as '*' or 'Bash(*)') in YAML frontmatter."),
             "QUAL-001": ("Trigger Quality", "Checks whether skill descriptions include explicit activation conditions."),
             "QUAL-002": ("Directory Alignment", "Checks whether directory name matches frontmatter name."),
             "QUAL-003": ("Context Budget Limit", "Flags bloated skills exceeding recommended token and line limits."),
@@ -166,7 +172,7 @@ class AuditReport:
                     "tool": {
                         "driver": {
                             "name": "SkillForge",
-                            "version": "0.4.1",
+                            "version": __version__,
                             "informationUri": "https://github.com/gintingism/skillforge",
                             "rules": sarif_rules,
                         }
@@ -268,6 +274,139 @@ _MAX_BODY_TOKENS = 5000
 _DISCLOSED_PATH_PATTERN = re.compile(
     r"(?:`|\()(?:\./)?(scripts|references)/([a-zA-Z0-9_.-]+(?:/[a-zA-Z0-9_.-]+)*\.[a-zA-Z0-9]+)(?:`|\))"
 )
+_MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+_UNRESTRICTED_TOOL_PATTERN = re.compile(
+    r"(?i)(?:^|[\s,])(\*|(?:bash|sh|shell|cmd|powershell)\(\*\))(?:$|[\s,])"
+)
+
+_NETWORK_MODULES = frozenset({
+    "urllib",
+    "urllib.request",
+    "requests",
+    "httpx",
+    "socket",
+    "http",
+    "http.client",
+    "aiohttp",
+})
+_DANGEROUS_BUILTINS = frozenset({"eval", "exec", "compile", "__import__"})
+_DANGEROUS_ATTR_CALLS: dict[tuple[str, str], str] = {
+    ("os", "system"): "os.system()",
+    ("os", "popen"): "os.popen()",
+    ("pty", "spawn"): "pty.spawn()",
+    ("pickle", "loads"): "pickle.loads()",
+    ("pickle", "load"): "pickle.load()",
+    ("marshal", "loads"): "marshal.loads()",
+    ("marshal", "load"): "marshal.load()",
+}
+_SUBPROCESS_CALLS = frozenset({"run", "Popen", "call", "check_output", "check_call"})
+
+
+class _PythonASTScanner(ast.NodeVisitor):
+    """AST visitor detecting dangerous calls and env-to-network taint in Python scripts."""
+
+    def __init__(self, filename: str, lines: list[str]) -> None:
+        self.filename = filename
+        self.lines = lines
+        self.findings: list[AuditFinding] = []
+        self.env_access_line: int | None = None
+        self.network_import_line: int | None = None
+
+    def _snippet(self, lineno: int | None) -> str | None:
+        if lineno is not None and 1 <= lineno <= len(self.lines):
+            return self.lines[lineno - 1].strip()
+        return None
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            if alias.name in _NETWORK_MODULES or alias.name.split(".")[0] in _NETWORK_MODULES:
+                if self.network_import_line is None:
+                    self.network_import_line = node.lineno
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if node.module and (
+            node.module in _NETWORK_MODULES or node.module.split(".")[0] in _NETWORK_MODULES
+        ):
+            if self.network_import_line is None:
+                self.network_import_line = node.lineno
+        self.generic_visit(node)
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        if isinstance(node.value, ast.Name) and node.value.id == "os" and node.attr == "environ":
+            if self.env_access_line is None:
+                self.env_access_line = node.lineno
+        self.generic_visit(node)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        if isinstance(node.func, ast.Name):
+            func_name = node.func.id
+            if func_name in _DANGEROUS_BUILTINS:
+                self.findings.append(
+                    AuditFinding(
+                        rule_id="SEC-008",
+                        severity=Severity.HIGH,
+                        message=f"Python AST dangerous dynamic execution call: '{func_name}()'",
+                        file=self.filename,
+                        line=node.lineno,
+                        snippet=self._snippet(node.lineno),
+                    )
+                )
+        elif isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+            mod_name = node.func.value.id
+            attr_name = node.func.attr
+            if (mod_name, attr_name) == ("os", "getenv"):
+                if self.env_access_line is None:
+                    self.env_access_line = node.lineno
+            elif (mod_name, attr_name) in _DANGEROUS_ATTR_CALLS:
+                label = _DANGEROUS_ATTR_CALLS[(mod_name, attr_name)]
+                self.findings.append(
+                    AuditFinding(
+                        rule_id="SEC-008",
+                        severity=Severity.HIGH,
+                        message=f"Python AST unsafe execution or deserialization call: '{label}'",
+                        file=self.filename,
+                        line=node.lineno,
+                        snippet=self._snippet(node.lineno),
+                    )
+                )
+            elif mod_name == "subprocess" and attr_name in _SUBPROCESS_CALLS:
+                for kw in node.keywords:
+                    if (
+                        kw.arg == "shell"
+                        and isinstance(kw.value, ast.Constant)
+                        and kw.value.value is True
+                    ):
+                        self.findings.append(
+                            AuditFinding(
+                                rule_id="SEC-008",
+                                severity=Severity.HIGH,
+                                message=f"Python AST subprocess.{attr_name}() invoked with shell=True",
+                                file=self.filename,
+                                line=node.lineno,
+                                snippet=self._snippet(node.lineno),
+                            )
+                        )
+        self.generic_visit(node)
+
+    def finalize(self) -> list[AuditFinding]:
+        if self.env_access_line is not None and self.network_import_line is not None:
+            line = max(self.env_access_line, self.network_import_line)
+            self.findings.append(
+                AuditFinding(
+                    rule_id="SEC-008",
+                    severity=Severity.CRITICAL,
+                    message=(
+                        "Python AST taint flow: script reads environment variables "
+                        f"(line {self.env_access_line}) and imports network client modules "
+                        f"(line {self.network_import_line})"
+                    ),
+                    file=self.filename,
+                    line=line,
+                    snippet=self._snippet(line),
+                )
+            )
+        return self.findings
 
 
 class SkillAuditor:
@@ -280,6 +419,20 @@ class SkillAuditor:
 
         skill_text = package.skill.render()
         findings.extend(self._scan_text(skill_text, "SKILL.md"))
+
+        if package.skill.allowed_tools and _UNRESTRICTED_TOOL_PATTERN.search(package.skill.allowed_tools):
+            findings.append(
+                AuditFinding(
+                    rule_id="SEC-009",
+                    severity=Severity.MEDIUM,
+                    message=(
+                        f"Unrestricted tool permission scope in frontmatter allowed-tools: "
+                        f"'{package.skill.allowed_tools}'"
+                    ),
+                    file="SKILL.md",
+                    snippet=f"allowed-tools: {package.skill.allowed_tools}",
+                )
+            )
 
         if package.source_dir and package.source_dir.name != package.skill.name:
             findings.append(
@@ -343,8 +496,11 @@ class SkillAuditor:
             findings.extend(self._check_disclosed_paths(package))
 
         for rel_path, content in package.scripts.items():
-            findings.extend(self._scan_text(content, f"scripts/{rel_path}"))
-            findings.extend(self._scan_shell_content(content, f"scripts/{rel_path}"))
+            script_file = f"scripts/{rel_path}"
+            findings.extend(self._scan_text(content, script_file))
+            findings.extend(self._scan_shell_content(content, script_file))
+            if rel_path.endswith(".py") or content.startswith("#!") and "python" in content.splitlines()[0]:
+                findings.extend(self._scan_python_ast(content, script_file))
 
         for rel_path, content in package.references.items():
             findings.extend(self._scan_text(content, f"references/{rel_path}"))
@@ -356,6 +512,16 @@ class SkillAuditor:
             body_tokens=package.skill.body_tokens,
             body_lines=package.skill.body_lines,
         )
+
+    def _scan_python_ast(self, content: str, filename: str) -> list[AuditFinding]:
+        """Parse and inspect Python scripts using AST and taint analysis."""
+        try:
+            tree = ast.parse(content, filename=filename)
+        except SyntaxError:
+            return []
+        scanner = _PythonASTScanner(filename, content.splitlines())
+        scanner.visit(tree)
+        return scanner.finalize()
 
     def _check_disclosed_paths(self, package: SkillPackage) -> list[AuditFinding]:
         """Verify that files referenced via progressive disclosure exist in the package."""
@@ -496,6 +662,30 @@ class SkillAuditor:
                         )
                     )
 
+            # Check markdown link spoofing (SEC-007)
+            for match_link in _MARKDOWN_LINK_PATTERN.finditer(line):
+                label_raw = match_link.group(1).strip().strip("`")
+                target_raw = match_link.group(2).strip().split()[0]
+                if label_raw.startswith(("http://", "https://")) and target_raw.startswith(
+                    ("http://", "https://")
+                ):
+                    label_host = (urlparse(label_raw).hostname or "").lower().removeprefix("www.")
+                    target_host = (urlparse(target_raw).hostname or "").lower().removeprefix("www.")
+                    if label_host and target_host and label_host != target_host:
+                        findings.append(
+                            AuditFinding(
+                                rule_id="SEC-007",
+                                severity=Severity.HIGH,
+                                message=(
+                                    f"Markdown link spoofing detected: visible URL host '{label_host}' "
+                                    f"points to different destination host '{target_host}'"
+                                ),
+                                file=filename,
+                                line=idx,
+                                snippet=line.strip(),
+                            )
+                        )
+
         return findings
 
     def _scan_shell_content(self, text: str, filename: str) -> list[AuditFinding]:
@@ -532,6 +722,71 @@ class SkillAuditor:
         return findings
 
 
+def _discover_collection_packages(root: Path) -> list[SkillPackage]:
+    """Discover skill packages within a collection directory or project root."""
+    packages: dict[str, SkillPackage] = {}
+    search_roots = (
+        root,
+        root / "skills",
+        root / ".claude" / "skills",
+        root / ".cursor" / "skills",
+        root / ".gemini" / "skills",
+        root / ".gemini" / "config" / "skills",
+        root / ".windsurf" / "skills",
+        root / ".cline" / "skills",
+        root / ".agents" / "skills",
+        root / ".skillforge",
+        root / "src" / "skillforge" / "builtin_skills",
+    )
+    for candidate in search_roots:
+        if candidate.is_dir():
+            for skill_md in sorted(candidate.glob("*/SKILL.md")):
+                try:
+                    pkg = SkillPackage.load(skill_md.parent)
+                    packages.setdefault(pkg.skill.name, pkg)
+                except Exception:
+                    pass
+    return [packages[name] for name in sorted(packages)]
+
+
 def audit_path(path: Path) -> AuditReport:
-    """Convenience helper to audit a skill file or directory."""
-    return SkillAuditor().audit_file_or_dir(path)
+    """Convenience helper to audit a skill file, skill package, or multi-skill directory."""
+    auditor = SkillAuditor()
+    if path.is_file() or (path / "SKILL.md").is_file():
+        return auditor.audit_file_or_dir(path)
+
+    if path.is_dir():
+        packages = _discover_collection_packages(path)
+        if packages:
+            if len(packages) == 1:
+                return auditor.audit_package(packages[0])
+            combined_findings: list[AuditFinding] = []
+            total_pointer = 0
+            total_body = 0
+            total_lines = 0
+            for pkg in packages:
+                rep = auditor.audit_package(pkg)
+                total_pointer += rep.pointer_tokens
+                total_body += rep.body_tokens
+                total_lines += rep.body_lines
+                for f in rep.findings:
+                    combined_findings.append(
+                        AuditFinding(
+                            rule_id=f.rule_id,
+                            severity=f.severity,
+                            message=f.message,
+                            file=f"{pkg.skill.name}/{f.file}",
+                            line=f.line,
+                            snippet=f.snippet,
+                        )
+                    )
+            label = path.resolve().name or str(path)
+            return AuditReport(
+                target=f"{label} ({len(packages)} skills)",
+                findings=combined_findings,
+                pointer_tokens=total_pointer,
+                body_tokens=total_body,
+                body_lines=total_lines,
+            )
+
+    return auditor.audit_file_or_dir(path)

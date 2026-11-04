@@ -21,8 +21,16 @@ Common attack vectors in community-shared skills include:
 | **`SEC-002`** | **CRITICAL** | Prompt Injection | Scans for jailbreak patterns (`ignore previous instructions`, `system override`, `developer mode`, `DAN mode`). |
 | **`SEC-003`** | **HIGH** | Dangerous Shell | Identifies risky execution patterns in scripts and markdown blocks (`curl \| bash`, base64 piping to shell, outbound data exfiltration via POST). |
 | **`SEC-004`** | **MEDIUM** | Credential Harvesting | Detects unprompted direct reads to sensitive user paths (SSH private keys, AWS credentials, gcloud configs). |
+| **`SEC-005`** | **HIGH** | Exfiltration Endpoints | Detects outbound data transmission to webhook or request-capture domains (`webhook.site`, `pipedream.net`, `requestbin.net`). |
+| **`SEC-006`** | **CRITICAL / HIGH** | Hardcoded Secrets | Detects hardcoded API keys and provider tokens (`ghp_`, `github_pat_`, `sk-ant-`, `AIzaSy`, `AKIA`). |
+| **`SEC-007`** | **HIGH** | Markdown Link Spoofing | Detects deceptive links where the visible URL host differs from the target destination host. |
+| **`SEC-008`** | **CRITICAL / HIGH** | Python AST & Taint Analysis | Inspects bundled `.py` scripts via Python AST for `eval()`, `exec()`, `subprocess(..., shell=True)`, unsafe deserialization, and environment-to-network taint flows. |
+| **`SEC-009`** | **MEDIUM** | Unrestricted Tool Scope | Flags wildcard tool permissions (`*`, `Bash(*)`) in `allowed-tools` YAML frontmatter. |
 | **`QUAL-001`** | **LOW** | Trigger Quality | Verifies whether the skill description includes explicit activation triggers (`when`, `use when`, `for`) necessary for token-efficient progressive disclosure. |
 | **`QUAL-002`** | **MEDIUM** | Spec Compliance | Ensures directory name matches the `name` field in YAML frontmatter and validates identifier safety. |
+| **`QUAL-003`** | **LOW** | Context Budget Limit | Flags `SKILL.md` bodies exceeding 500 lines or ~5,000 tokens so reference docs are extracted into `references/`. |
+| **`QUAL-004`** | **HIGH** | Broken Resource Pointer | Verifies that every `references/...` or `scripts/...` path cited in `SKILL.md` exists in the package. |
+| **`QUAL-006`** | **MEDIUM** | Applicability Hijacking | Flags overbroad trigger descriptions that attempt to force activation on every user prompt. |
 
 ---
 

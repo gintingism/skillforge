@@ -1,7 +1,10 @@
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "skillforge",
   "version": "0.4.2",
   "description": "Universal package manager, security auditor, and context token profiler for portable agent skills.",
+  "homepage": "https://github.com/gintingism/skillforge",
+  "repository": "https://github.com/gintingism/skillforge",
   "author": {
     "name": "gintingism",
     "url": "https://github.com/gintingism"

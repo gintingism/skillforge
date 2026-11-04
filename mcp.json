@@ -1,0 +1,12 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "skillforge": {
+      "command": "skillforge",
+      "args": ["serve-mcp"],
+      "env": {
+        "SKILLFORGE_REGISTRY_PATH": ".skillforge"
+      }
+    }
+  }
+}

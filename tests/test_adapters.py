@@ -9,6 +9,7 @@ from skillforge.adapters import (
     ClineAdapter,
     CopilotAdapter,
     CursorAdapter,
+    UniversalAgentsAdapter,
     WindsurfAdapter,
     detect_adapters,
 )
@@ -88,3 +89,22 @@ def test_claude_adapter_wraps_filesystem_errors(tmp_path: Path) -> None:
     (tmp_path / ".claude" / "skills" / "demo").write_text("not a directory", encoding="utf-8")
     with pytest.raises(AdapterError, match="Unable to install"):
         ClaudeAdapter().install(Skill("demo", "A demo", ""), tmp_path)
+
+
+def test_universal_agents_adapter_lifecycle(tmp_path: Path) -> None:
+    (tmp_path / ".agents").mkdir()
+    adapters = detect_adapters(tmp_path)
+    assert [type(a).__name__ for a in adapters] == ["UniversalAgentsAdapter"]
+
+    pkg = SkillPackage(
+        skill=Skill("uni-skill", "Universal skill when testing", "# Universal\n"),
+        references={"spec.md": "# Spec\n"},
+    )
+    adapter = UniversalAgentsAdapter()
+    installed = adapter.install(pkg, tmp_path)
+    assert installed == tmp_path / ".agents" / "skills" / "uni-skill" / "SKILL.md"
+    assert (tmp_path / ".agents" / "skills" / "uni-skill" / "references" / "spec.md").exists()
+    assert adapter.list_skills(tmp_path) == ["uni-skill"]
+    assert adapter.remove("uni-skill", tmp_path) is True
+    assert adapter.list_skills(tmp_path) == []
+

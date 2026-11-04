@@ -308,11 +308,46 @@ class ClineAdapter(Adapter):
         return sorted([p.parent.name for p in skills_dir.glob("*/SKILL.md")])
 
 
+class UniversalAgentsAdapter(Adapter):
+    """Adapter for universal .agents/skills/<name>/SKILL.md package directories."""
+
+    def detect(self, project: Path) -> bool:
+        return (project / ".agents").is_dir()
+
+    def install(self, skill: SkillTarget, project: Path) -> Path:
+        skill_obj, package = self._extract_skill(skill)
+        skill_dir = project / ".agents" / "skills" / skill_obj.name
+        target = skill_dir / "SKILL.md"
+        try:
+            if package:
+                package.save(skill_dir)
+            else:
+                skill_dir.mkdir(parents=True, exist_ok=True)
+                target.write_text(skill_obj.render(), encoding="utf-8")
+        except OSError as exc:
+            raise AdapterError(f"Unable to install universal .agents skill: {exc}") from exc
+        return target
+
+    def remove(self, name: str, project: Path) -> bool:
+        self._checked_name(name)
+        skill_dir = project / ".agents" / "skills" / name
+        if skill_dir.exists():
+            self._safe_rmtree(skill_dir)
+            return True
+        return False
+
+    def list_skills(self, project: Path) -> list[str]:
+        skills_dir = project / ".agents" / "skills"
+        if not skills_dir.is_dir():
+            return []
+        return sorted([p.parent.name for p in skills_dir.glob("*/SKILL.md")])
+
+
 class AgentsMarkdownAdapter(Adapter):
     """Adapter for universal AGENTS.md instruction catalogs."""
 
     def detect(self, project: Path) -> bool:
-        return (project / "AGENTS.md").is_file() or (project / ".agents").is_dir()
+        return (project / "AGENTS.md").is_file()
 
     def install(self, skill: SkillTarget, project: Path) -> Path:
         skill_obj, _ = self._extract_skill(skill)
@@ -378,6 +413,7 @@ def detect_adapters(project: Path, global_scope: bool = False) -> list[Adapter]:
         AntigravityAdapter(),
         WindsurfAdapter(),
         ClineAdapter(),
+        UniversalAgentsAdapter(),
         AgentsMarkdownAdapter(),
     )
     return [adapter for adapter in adapters if adapter.detect(project)]

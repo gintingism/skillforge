@@ -102,16 +102,20 @@ Total Findings: 0
 ```
 
 The auditor checks for:
-- **Invisible Unicode (SEC-001):** Zero-width spaces (`\u200B`, `\uFEFF`), homoglyphs, and directional overrides used to hide prompt instructions.
+- **Invisible & Bidi Unicode (SEC-001):** Zero-width spaces (`\u200B`, `\uFEFF`), homoglyphs, and bidirectional control characters (`\u202E`, `\u2066`) used to conceal prompt instructions or alter execution order.
 - **Prompt Injections (SEC-002):** Directives like `"ignore previous instructions"`, `"system override"`, or attempts to bypass safety guards. Quoted defensive examples are flagged as `MEDIUM`, while imperative commands remain `CRITICAL`.
 - **Dangerous Shell Commands (SEC-003):** Patterns like `curl ... | bash`, base64-decoded execution, and suspicious outbound transmission.
 - **Credential Path Access (SEC-004):** Unauthorized access to `~/.ssh`, `~/.aws/credentials`, or local environment files.
-- **Trojan Source Bidi Overrides (SEC-005):** Bidirectional control characters (`\u202E`, `\u2066`) that alter code execution order while displaying harmlessly.
-- **Markdown Link Spoofing (SEC-006):** Mismatched visual labels and target URLs hiding deceptive redirect destinations.
+- **Exfiltration Endpoints (SEC-005):** Outbound transmission to capture services (`webhook.site`, `pipedream.net`, `requestbin.net`) or environment variable exfiltration.
+- **Hardcoded Secrets (SEC-006):** Embedded API keys and provider tokens (`ghp_`, `github_pat_`, `sk-ant-`, `AIzaSy`, `AKIA`).
+- **Markdown Link Spoofing (SEC-007):** Mismatched visible URL hostnames and target URL destinations hiding deceptive redirects.
+- **Python AST & Taint Analysis (SEC-008):** Structural AST inspection of bundled Python scripts for `eval()`, `exec()`, `subprocess(..., shell=True)`, `pickle.loads()`, and environment-to-network taint flows.
+- **Unrestricted Tool Scope (SEC-009):** Wildcard tool permissions (`*`, `Bash(*)`) in `allowed-tools` frontmatter.
 - **Trigger Quality (QUAL-001):** Ensures descriptions specify concrete activation conditions.
 - **Directory Alignment (QUAL-002):** Ensures folder name matches the frontmatter `name`.
 - **Progressive Disclosure Budget (QUAL-003):** Flags `SKILL.md` bodies exceeding 500 lines or ~5,000 tokens so secondary reference material is moved to `references/`.
 - **Broken Disclosure Pointers (QUAL-004):** Checks that cited `references/...` and `scripts/...` files exist on disk.
+- **Applicability Hijacking (QUAL-006):** Flags overbroad trigger descriptions claiming all tasks.
 
 For CI pipelines, pass `--strict` to fail on warnings, `--json` for automation, or `--sarif` for GitHub Code Scanning:
 ```bash
@@ -363,7 +367,8 @@ SkillForge detects your assistant environment and places skills in the canonical
 | **Cursor** | `.cursor/` | `.cursor/skills/<name>/SKILL.md` |
 | **Windsurf** | `.windsurf/`, `.windsurfrules` | `.windsurf/skills/<name>/SKILL.md` |
 | **Cline / Roo-Code** | `.cline/`, `.roomodes` | `.cline/skills/<name>/SKILL.md` |
-| **Codex / Universal Agents** | `AGENTS.md`, `.agents/` | Appended to `AGENTS.md` catalog |
+| **Universal Agents (`npx skills` / Codex / OpenCode)** | `.agents/` | `.agents/skills/<name>/SKILL.md` |
+| **AGENTS.md Catalog** | `AGENTS.md` | Appended to `AGENTS.md` catalog |
 | **GitHub Copilot** | `.github/` | `.github/copilot-instructions.md` |
 
 To install a skill globally to your user profile instead of the current project, add `--global` (`-g`):

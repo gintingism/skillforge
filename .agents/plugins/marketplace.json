@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "skillforge",
+  "owner": {
+    "name": "gintingism",
+    "email": "bonifasiusto@gmail.com"
+  },
+  "metadata": {
+    "description": "Universal package manager, security auditor, and context token profiler for portable AI agent skills.",
+    "version": "0.4.2"
+  },
+  "plugins": [
+    {
+      "name": "skillforge",
+      "source": "./",
+      "description": "Universal package manager, security auditor, and context token profiler for portable agent skills (SKILL.md).",
+      "version": "0.4.2",
+      "category": "Development & Workflow",
+      "skills": [
+        "./src/skillforge/builtin_skills/agent-observability",
+        "./src/skillforge/builtin_skills/antislop-code",
+        "./src/skillforge/builtin_skills/blast-radius-containment",
+        "./src/skillforge/builtin_skills/caveman",
+        "./src/skillforge/builtin_skills/cognitive-loop-breaker",
+        "./src/skillforge/builtin_skills/context-compactor",
+        "./src/skillforge/builtin_skills/contract-test-generator",
+        "./src/skillforge/builtin_skills/flaky-test-isolation",
+        "./src/skillforge/builtin_skills/human-in-the-loop",
+        "./src/skillforge/builtin_skills/mcp-tool-designer",
+        "./src/skillforge/builtin_skills/performance-profiler",
+        "./src/skillforge/builtin_skills/runtime-api-verification",
+        "./src/skillforge/builtin_skills/secret-sanitizer",
+        "./src/skillforge/builtin_skills/security-threat-modeler",
+        "./src/skillforge/builtin_skills/self-improving-agent",
+        "./src/skillforge/builtin_skills/skill-architect",
+        "./src/skillforge/builtin_skills/spec-driven-development",
+        "./src/skillforge/builtin_skills/summarize",
+        "./src/skillforge/builtin_skills/supply-chain-sentinel",
+        "./src/skillforge/builtin_skills/systematic-debugging",
+        "./src/skillforge/builtin_skills/tavily-search",
+        "./src/skillforge/builtin_skills/zero-downtime-migration"
+      ]
+    }
+  ]
+}
