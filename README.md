@@ -54,15 +54,17 @@ As AI coding assistants adopt the open `SKILL.md` format, two practical problems
 | **Runtime** | None | Node.js / npm | **Python 3.11+ (`pip` / `uvx`)** |
 | **Offline Security Audit** | No | No | **100% Local Pattern & AST Scanner** |
 | **Prompt Injection Check** | No | No | **Built-in (`SEC-002`)** |
-| **Hidden Unicode / Bidi Scans** | No | No | **Built-in (`SEC-001`, `SEC-005`)** |
+| **Hidden Unicode / Bidi Scans** | No | No | **Built-in (`SEC-001`)** |
+| **Python AST & Taint Tracking** | No | No | **Built-in (`SEC-008`)** |
+| **Link Phishing / Spoofing** | No | No | **Built-in (`SEC-007`)** |
 | **Context Token Profiler** | No | No | **Built-in (`skillforge budget`)** |
 | **Trigger Eval Testing** | No | No | **Built-in (`skillforge test`)** |
 | **Context Budget Optimizer** | No | No | **Built-in (`skillforge optimize`)** |
 | **OpenAPI / Swagger Importer** | No | No | **Built-in (`skillforge import-openapi`)** |
 | **OASIS SARIF v2.1.0 Export** | No | No | **Built-in (`--sarif` for Code Scanning)** |
 | **Reproducible Lockfile** | No | Manifest only | **SHA-256 + Pinned Git Commit SHA** |
-| **Native MCP Server** | No | No | **Built-in (`skillforge serve-mcp`)** |
-| **Supported Assistants** | Manual | Single target | **Claude, Cursor, Antigravity, Windsurf, Cline, Copilot** |
+| **Native MCP Server & Agent Plugins 1.0** | No | Partial | **Built-in (`mcp.json`, `serve-mcp`)** |
+| **Supported Assistants** | Manual | Single target | **Claude, Cursor, Antigravity, Windsurf, Cline, Codex, Copilot** |
 
 ---
 
@@ -87,12 +89,17 @@ SkillForge Doctor Diagnostic (Project: 4 skills)
   Security Findings:    0 Critical, 0 High, 0 Total
 ```
 
-### 2. Audit a skill before running it (`audit`)
+### 2. Audit skills before running them (`audit`)
 
-Scan a skill for hidden payloads, trojan unicode, prompt injections, and invalid resource pointers:
+Scan an individual skill, a directory of skills, or the entire repository for prompt injections, AST taint flows, hidden payloads, and broken pointers:
 
 ```bash
+# Audit an individual skill
 skillforge audit ./skills/my-new-skill
+
+# Audit an entire collection directory or project root
+skillforge audit ./skills
+skillforge audit .
 ```
 ```text
 Audit Report: my-new-skill
@@ -119,7 +126,11 @@ The auditor checks for:
 
 For CI pipelines, pass `--strict` to fail on warnings, `--json` for automation, or `--sarif` for GitHub Code Scanning:
 ```bash
+# Audit an individual skill
 skillforge audit ./skills/my-new-skill --sarif results.sarif
+
+# Or audit the entire workspace
+skillforge audit . --sarif results.sarif
 ```
 
 ### 3. Profile startup token load (`budget`)
@@ -330,7 +341,7 @@ jobs:
 
 ## Model Context Protocol (MCP) Integration
 
-SkillForge includes a native MCP server so coding agents can inspect, search, and audit skills during their development loop:
+SkillForge includes a native MCP server conforming to the Agent Plugins 1.0 specification (configured via `mcp.json`), so coding agents can inspect, search, and audit skills during their development loop:
 
 ```json
 {
@@ -349,9 +360,9 @@ SkillForge includes a native MCP server so coding agents can inspect, search, an
 Exposed MCP tools:
 - `search_skills(query, limit)`: Search local and built-in skill catalogs.
 - `get_skill(name)`: Read the full `SKILL.md` instructions.
-- `get_skill_resource(name, resource_path)`: Read disclosed `references/*` or `scripts/*` files on demand.
-- `validate_skill(content)`: Test frontmatter syntax.
-- `audit_skill(content)`: Audit a raw skill document for prompt injections and malicious patterns.
+- `get_skill_resource(name, resource_path)`: Read disclosed `references/*` or `scripts/*` files on demand with path traversal protection.
+- `validate_skill(content)`: Test frontmatter syntax in memory.
+- `audit_skill(content)`: Audit a raw skill document for prompt injections, AST taint flows, and malicious patterns.
 - `skill://{name}`: Resource URI for direct document retrieval.
 
 ---
