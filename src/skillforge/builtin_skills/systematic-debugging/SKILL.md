@@ -31,7 +31,7 @@ Never modify code on guesswork. Follow the strict four-phase investigation loop 
 3. Rank hypotheses by probability and test the simplest first.
 
 ## Phase 4: Surgical Patch & Verification
-1. Apply the narrowest responsible fix at the root layer—never mask symptoms with superficial null-checks or swallow exceptions.
+1. Apply the narrowest responsible fix at the root layer: never mask symptoms with superficial null-checks or swallow exceptions.
 2. Run the reproduction test: verify it now passes.
 3. Run the full test suite: verify zero unintended regressions.
 4. Clean up any temporary debug logs before submitting changes.

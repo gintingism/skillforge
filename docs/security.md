@@ -26,11 +26,13 @@ Common attack vectors in community-shared skills include:
 | **`SEC-007`** | **HIGH** | Markdown Link Spoofing | Detects deceptive links where the visible URL host differs from the target destination host. |
 | **`SEC-008`** | **CRITICAL / HIGH** | Python AST & Taint Analysis | Inspects bundled `.py` scripts via Python AST for `eval()`, `exec()`, `subprocess(..., shell=True)`, unsafe deserialization, and environment-to-network taint flows. |
 | **`SEC-009`** | **MEDIUM** | Unrestricted Tool Scope | Flags wildcard tool permissions (`*`, `Bash(*)`) in `allowed-tools` YAML frontmatter. |
+| **`SEC-010`** | **HIGH** | Deceptive Installer Pattern | Flags prose instructions guiding users or agents to execute piped shell installers (`curl ... \| bash`, `irm ... \| iex`). |
 | **`QUAL-001`** | **LOW** | Trigger Quality | Verifies whether the skill description includes explicit activation triggers (`when`, `use when`, `for`) necessary for token-efficient progressive disclosure. |
 | **`QUAL-002`** | **MEDIUM** | Spec Compliance | Ensures directory name matches the `name` field in YAML frontmatter and validates identifier safety. |
 | **`QUAL-003`** | **LOW** | Context Budget Limit | Flags `SKILL.md` bodies exceeding 500 lines or ~5,000 tokens so reference docs are extracted into `references/`. |
 | **`QUAL-004`** | **HIGH** | Broken Resource Pointer | Verifies that every `references/...` or `scripts/...` path cited in `SKILL.md` exists in the package. |
 | **`QUAL-006`** | **MEDIUM** | Applicability Hijacking | Flags overbroad trigger descriptions that attempt to force activation on every user prompt. |
+| **`QUAL-007`** | **LOW** | agentskills.io Name Format | Validates strict naming compliance (`^[a-z0-9]+(-[a-z0-9]+)*$`) for portability across all runtimes. |
 
 ---
 
@@ -63,3 +65,21 @@ Example JSON Output:
   "findings": []
 }
 ```
+
+---
+
+## Honest Static Scanner Scope & Limitations
+
+Static analysis is an essential first line of defense for agent skill packages, but it has defined boundaries:
+
+1. **What Static Analysis Guarantees:**
+   - Deterministic discovery of malicious shell pipelines, reverse shells, and untrusted network endpoints.
+   - AST taint tracking in bundled Python scripts to prevent environment variable leaks and code injection.
+   - Zero-width unicode sanitization and prompt injection pattern detection.
+   - Resource pointer integrity and identifier formatting verification.
+
+2. **What Requires Human-in-the-Loop & Runtime Sandboxing:**
+   - **Semantic Policy Evasion:** Subtly biased or evasive natural language instructions that do not contain explicit injection phrases or code execution payloads cannot be definitively categorized by pattern matching alone.
+   - **Dynamic Server Payloads:** If a skill instructs an agent to call an external API that later changes its payload response, static analysis cannot inspect runtime remote data.
+   - **Complementary Defenses:** We recommend pairing SkillForge static audits with runtime container sandboxing (e.g. gVisor, Docker, or Windows sandbox environments) and requiring explicit user approval for destructive commands.
+

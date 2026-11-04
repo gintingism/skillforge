@@ -122,11 +122,13 @@ class AuditReport:
             "SEC-007": ("Markdown Link Spoofing", "Detects deceptive markdown links where visible URL host differs from destination host."),
             "SEC-008": ("Python AST Dangerous Call or Taint Flow", "Detects dangerous Python AST calls (eval, exec, shell=True, unsafe deserialization) or env-to-network taint."),
             "SEC-009": ("Unrestricted Tool Scope", "Flags wildcard tool permissions (such as '*' or 'Bash(*)') in YAML frontmatter."),
+            "SEC-010": ("Markdown-as-Installer Deceptive Instruction", "Detects instructions prompting the user or agent to execute unverified install scripts or remote terminal pipelines."),
             "QUAL-001": ("Trigger Quality", "Checks whether skill descriptions include explicit activation conditions."),
             "QUAL-002": ("Directory Alignment", "Checks whether directory name matches frontmatter name."),
             "QUAL-003": ("Context Budget Limit", "Flags bloated skills exceeding recommended token and line limits."),
             "QUAL-004": ("Broken Resource Pointer", "Checks whether cited scripts or references exist in the package."),
             "QUAL-006": ("Applicability Hijacking", "Flags overbroad trigger descriptions claiming all tasks."),
+            "QUAL-007": ("Standard Spec Name Formatting", "Checks whether skill name conforms to agentskills.io standard (lowercase alphanumeric and hyphens only, no leading or trailing hyphens)."),
         }
         sarif_rules: list[dict[str, Any]] = []
         for rid, (rname, rdesc) in sorted(rule_meta.items()):
@@ -278,6 +280,15 @@ _MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 _UNRESTRICTED_TOOL_PATTERN = re.compile(
     r"(?i)(?:^|[\s,])(\*|(?:bash|sh|shell|cmd|powershell)\(\*\))(?:$|[\s,])"
 )
+_MARKDOWN_INSTALLER_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(
+        r"(?i)(?:\b(?:run|execute)\s+(?:this\s+)?(?:installer|install\s+script|payload)|\b(?:copy\s+and\s+paste|paste)\s+(?:this\s+)?(?:command\s+)?(?:in|into)\s+(?:your\s+)?(?:terminal|shell|console|bash|powershell))\b.*?(?:curl|wget|powershell|iex|bash\s+-c|sh\s+-c|python\s+-c)"
+    ),
+    re.compile(
+        r"(?i)\b(?:curl|wget)\b[^\n`]+(?:\|\s*(?:bash|sh|zsh|powershell|pwsh)|>\s*/tmp/[^\n`]+\s*&&\s*(?:bash|sh))"
+    ),
+]
+_SPEC_NAME_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 
 _NETWORK_MODULES = frozenset({
     "urllib",
@@ -444,6 +455,20 @@ class SkillAuditor:
                         f"skill name '{package.skill.name}'"
                     ),
                     file="SKILL.md",
+                )
+            )
+
+        if not _SPEC_NAME_PATTERN.fullmatch(package.skill.name) or "--" in package.skill.name:
+            findings.append(
+                AuditFinding(
+                    rule_id="QUAL-007",
+                    severity=Severity.LOW,
+                    message=(
+                        f"Skill name '{package.skill.name}' does not strictly conform to agentskills.io spec: "
+                        "use lowercase alphanumeric characters and single hyphens only, with no leading/trailing hyphens or underscores"
+                    ),
+                    file="SKILL.md",
+                    snippet=f"name: {package.skill.name}",
                 )
             )
 
@@ -685,6 +710,26 @@ class SkillAuditor:
                                 snippet=line.strip(),
                             )
                         )
+
+            # Check Markdown-as-Installer / ClickFix patterns (SEC-010)
+            for inst_pattern in _MARKDOWN_INSTALLER_PATTERNS:
+                match_inst = inst_pattern.search(line)
+                if match_inst:
+                    quoted_defense = bool(
+                        _DEFENSIVE_CONTEXT_PATTERN.search(line) and re.search(r"[\"'`]", line)
+                    )
+                    findings.append(
+                        AuditFinding(
+                            rule_id="SEC-010",
+                            severity=Severity.MEDIUM if quoted_defense else Severity.HIGH,
+                            message=(
+                                f"Markdown-as-Installer deceptive command instruction detected: '{match_inst.group(0)[:70]}'"
+                            ),
+                            file=filename,
+                            line=idx,
+                            snippet=line.strip()[:100],
+                        )
+                    )
 
         return findings
 

@@ -250,3 +250,34 @@ def test_cli_doctor_and_diff_commands(tmp_path: Path) -> None:
     assert diff_res.exit_code == 0, diff_res.output
     assert "target_a/SKILL.md" in diff_res.output
     assert "good things v2" in diff_res.output
+
+
+def test_cli_lint_context_command(tmp_path: Path) -> None:
+    project = tmp_path / "project_ctx"
+    project.mkdir()
+    agents_file = project / "AGENTS.md"
+    agents_file.write_text(
+        "# Project Agent Guide\n\n"
+        "## Boundaries\n"
+        "- Never push directly to main branch.\n"
+        "- Always run pytest before requesting review.\n",
+        encoding="utf-8",
+    )
+
+    res = runner.invoke(app, ["lint-context", "-p", str(project), "--json"])
+    assert res.exit_code == 0, res.output
+    data = json.loads(res.stdout)
+    assert data["passed"] is True
+    assert data["total_lines"] == 5
+
+    # Test failure on bloated context file
+    bloated = project / "CLAUDE.md"
+    bloated_lines = ["# Claude Rules\n"] + [f"- Rule {i}: do something\n" for i in range(160)]
+    bloated.write_text("".join(bloated_lines), encoding="utf-8")
+
+    res_bloated = runner.invoke(app, ["lint-context", "-p", str(project), "--json"])
+    assert res_bloated.exit_code == 1
+    bloated_data = json.loads(res_bloated.stdout)
+    assert bloated_data["passed"] is False
+    assert any(f["rule_id"] == "CTX-001" for f in bloated_data["findings"])
+

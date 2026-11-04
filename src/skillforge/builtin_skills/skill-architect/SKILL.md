@@ -14,14 +14,14 @@ Author high-signal, low-token agent documents (`SKILL.md`, `AGENTS.md`, `CLAUDE.
 
 ## 1. Three-Tier Context Hierarchy
 
-1. **Tier 1 — Always-Loaded Pointer (`name` + `description`)**:
+1. **Tier 1: Always-Loaded Pointer (`name` + `description`)**:
    - Every model-invoked skill's `name` and `description` remain in the startup context on every turn.
    - Front-load the capability and explicit trigger condition within the first 200 characters: *"Design, author, and refactor... Use when..."*.
    - For user-only slash workflows that should never auto-trigger, set `disable-model-invocation: true` to drop startup token cost to zero.
-2. **Tier 2 — On-Demand Procedure (`SKILL.md` body)**:
+2. **Tier 2: On-Demand Procedure (`SKILL.md` body)**:
    - Keep `SKILL.md` under **500 lines** and **5,000 tokens**.
    - Include only the decision tree, numbered workflow steps, and verification commands needed during execution.
-3. **Tier 3 — Disclosed Deep Reference (`references/` & `scripts/`)**:
+3. **Tier 3: Disclosed Deep Reference (`references/` & `scripts/`)**:
    - Move large schemas, edge-case tables, and deterministic helpers into `references/` or `scripts/`.
    - Link each file with an explicit load condition (for example: read `references/mechanics.md` when choosing frontmatter fields or invocation modes).
 

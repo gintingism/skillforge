@@ -12,6 +12,7 @@ from typing import Any
 import typer
 
 from .adapters import detect_adapters
+from .context_linter import lint_project_context
 from .errors import SecurityAuditError, SkillForgeError
 from .evals import init_evals, run_evals
 from .mcp_server import run_mcp_server
@@ -147,6 +148,31 @@ def badge(
     typer.echo("HTML Badge:")
     typer.echo(f"  {html_badge}\n")
     typer.echo(f"Shield URL: {badge_url}")
+
+
+@app.command("lint-context")
+def lint_context(
+    project: Path = typer.Option(Path("."), "--project", "-p", help="Target project root."),
+    strict: bool = typer.Option(False, "--strict", help="Fail if any warning or finding is detected."),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+) -> None:
+    """Lint project instruction files (AGENTS.md, CLAUDE.md, etc.) for token bloat, buzzwords, and missing guardrails."""
+    try:
+        report = lint_project_context(project)
+    except (SkillForgeError, OSError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"passed": False, "error": str(exc)}))
+        else:
+            typer.echo(f"Context lint error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if json_output:
+        typer.echo(json.dumps(report.to_dict(), indent=2))
+    else:
+        typer.echo(report.render_text())
+
+    if not report.passed or (strict and report.findings):
+        raise typer.Exit(code=1)
 
 
 @app.command()

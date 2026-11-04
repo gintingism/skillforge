@@ -54,10 +54,12 @@ As AI coding assistants adopt the open `SKILL.md` format, two practical problems
 | **Runtime** | None | Node.js / npm | **Python 3.11+ (`pip` / `uvx`)** |
 | **Offline Security Audit** | No | No | **100% Local Pattern & AST Scanner** |
 | **Prompt Injection Check** | No | No | **Built-in (`SEC-002`)** |
+| **Deceptive Installer Check** | No | No | **Built-in (`SEC-010`)** |
 | **Hidden Unicode / Bidi Scans** | No | No | **Built-in (`SEC-001`)** |
 | **Python AST & Taint Tracking** | No | No | **Built-in (`SEC-008`)** |
 | **Link Phishing / Spoofing** | No | No | **Built-in (`SEC-007`)** |
 | **Context Token Profiler** | No | No | **Built-in (`skillforge budget`)** |
+| **Context File Linter** | No | No | **Built-in (`skillforge lint-context`)** |
 | **Trigger Eval Testing** | No | No | **Built-in (`skillforge test`)** |
 | **Context Budget Optimizer** | No | No | **Built-in (`skillforge optimize`)** |
 | **OpenAPI / Swagger Importer** | No | No | **Built-in (`skillforge import-openapi`)** |
@@ -209,7 +211,33 @@ Successfully imported 'petstore-api' into skills/petstore-api
 
 The resulting package places an executive summary in `SKILL.md` and moves full endpoint schemas to `references/endpoints.md`, keeping prompt overhead low.
 
-### 7. Generate a verified security badge (`badge`)
+### 7. Lint agent instruction files (`lint-context`)
+
+Scan root-level instruction documents (`AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.windsurfrules`, `.gemini/GEMINI.md`) for context-window health:
+
+```bash
+# Scan active project instruction files
+skillforge lint-context
+
+# Fail CI if warnings or excessive bloat are found
+skillforge lint-context --strict
+
+# Output machine-readable JSON
+skillforge lint-context --json
+```
+```text
+Context Linter: my-project
+Status: WARNINGS DETECTED
+Files Scanned: 2 (AGENTS.md, CLAUDE.md)
+Context Overhead: ~1840 tokens across 210 lines
+Total Findings: 2
+
+Findings:
+  [HIGH] CTX-001 (CLAUDE.md:162): Context file has 162 lines (exceeds 150-line ceiling); oversized context degrades model attention and inflates per-turn token cost. Prune self-evident instructions or extract deep manuals to references/
+  [LOW] CTX-003 (AGENTS.md:14): Generic buzzword 'seamless' found; replace with concrete operational constraints.
+```
+
+### 8. Generate a verified security badge (`badge`)
 
 Show users that your skill passed security auditing. Generate a markdown or HTML badge for your repository:
 
@@ -220,7 +248,7 @@ skillforge badge ./my-skill
 [![Audited by SkillForge](https://img.shields.io/badge/SkillForge-Security%20Passed%20100%2F100-2ea44f?logo=shield&style=flat-square)](https://github.com/gintingism/skillforge)
 ```
 
-### 8. Install directly from GitHub (`add`)
+### 9. Install directly from GitHub (`add`)
 
 Pull skills from remote repositories with security auditing and commit pinning:
 
@@ -237,7 +265,7 @@ skillforge add gintingism/skillforge:systematic-debugging
 
 SkillForge audits the skill, installs it into detected assistant directories, and records the SHA-256 digest and Git commit SHA in `skillforge.lock`.
 
-### 9. Verify skill integrity and detect drift (`verify`)
+### 10. Verify skill integrity and detect drift (`verify`)
 
 Check installed skills against `skillforge.lock` in CI/CD or local environments without making network requests. Detects file tampering, missing dependencies, or unmanaged skills:
 
@@ -255,7 +283,7 @@ skillforge verify --json
 Verification PASSED: 2 skill(s) match skillforge.lock.
 ```
 
-### 10. Compare changes before updating (`diff`)
+### 11. Compare changes before updating (`diff`)
 
 Inspect diffs between local skills and upstream repositories, or compare two skill versions:
 
@@ -264,7 +292,7 @@ skillforge diff ./skills/my-skill
 skillforge diff my-skill gintingism/skillforge:my-skill
 ```
 
-### 11. Manage installed skills (`list` & `remove`)
+### 12. Manage installed skills (`list` & `remove`)
 
 See which skills are active across your editor targets:
 
@@ -286,7 +314,7 @@ Remove a skill from all detected assistants and update your lockfile:
 skillforge remove antislop-code
 ```
 
-### 12. Create and package skills (`create` & `pack`)
+### 13. Create and package skills (`create` & `pack`)
 
 Scaffold a single skill file or a full package directory with scripts and references:
 
@@ -389,9 +417,9 @@ skillforge install systematic-debugging --global
 
 ---
 
-## Built-in Skills (22 Zero-Slop Skills)
+## Built-in Skills (26 Zero-Slop Skills)
 
-SkillForge ships with 22 practical engineering skills to address common agent failure modes identified in benchmark research:
+SkillForge ships with 26 practical engineering skills to address common agent failure modes identified in benchmark research:
 
 ### Code Quality, Security & Performance
 - `supply-chain-sentinel`: Check package existence, registry age, and run CVE audits (`pip-audit`, `npm audit`) before adding dependencies.
@@ -403,6 +431,10 @@ SkillForge ships with 22 practical engineering skills to address common agent fa
 - `antislop-code`: Comment hygiene and anti-overengineering filters that remove trivial narrative comments and prevent speculative generality.
 - `spec-driven-development`: Schema-first API design and red-green verification loops before writing application logic.
 - `zero-downtime-migration`: Four-phase Expand-Contract pattern for non-breaking database schema and API evolutions.
+- `code-review`: Multi-pass adversarial code review matrix (correctness, security, performance, test integrity) before merging pull requests.
+- `git-workflow`: Atomic conventional commits, pre-staging diff checks, protected branch safety guardrails, and conflict pause protocol.
+- `test-driven-development`: Red-Green-Refactor development cycle with test runner discovery, failing reproduction assertions, and raw terminal exit criteria.
+- `dependency-upgrade`: Systematic version updates with changelog and CVE audits, incremental single-package bumps, and rollback safeguards.
 
 ### Autonomous Loop Stability & Debugging
 - `systematic-debugging`: Four-phase diagnosis protocol (Reproduce, Isolate, Hypothesize, Surgical Patch) before touching code.
@@ -420,6 +452,15 @@ SkillForge ships with 22 practical engineering skills to address common agent fa
 - `summarize`: Executive engineering summaries with exact file and line citations.
 - `tavily-search`: Authoritative primary-source technical research with cross-verification.
 - `self-improving-agent`: Error recording loop that turns recurring bugs into durable project rules.
+
+---
+
+## Static Scanner Scope & Honest Limitations
+
+SkillForge provides deterministic, 100% offline static auditing to catch dangerous instruction patterns before skills run:
+
+- **What SkillForge Catches:** Malicious shell pipelines (`curl | bash`, `powershell -enc`), reverse shells, unauthorized file reads (`~/.ssh`, `~/.aws`), Python AST taint flows (environment tokens passing into network requests), zero-width unicode obfuscation, deceptive link targets, and context-window token bloat.
+- **What Requires Human Review & Sandboxes:** Pure natural-language policy evasion (instructions that subtly coax models into biased or non-compliant decisions without executable code or known jailbreak keywords) cannot be reliably detected by regex or AST analysis alone. We recommend combining SkillForge static audits with runtime OS sandboxing and requiring human confirmation for irreversible external actions.
 
 ---
 
