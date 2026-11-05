@@ -72,7 +72,7 @@ Example JSON Output:
 
 ## Regression Corpus
 
-[`tests/test_corpus.py`](../tests/test_corpus.py) holds known-malicious and known-benign skill snippets. Each malicious case names the rule that must fire, and benign cases must produce no CRITICAL or HIGH finding. The corpus is small and hand-written, so it guards against regressions in the existing patterns; it does not measure real-world detection rates. Add a case whenever you fix a missed detection or a false positive.
+[`tests/test_corpus.py`](https://github.com/gintingism/skillforge/blob/main/tests/test_corpus.py) holds known-malicious and known-benign skill snippets. Each malicious case names the rule that must fire, and benign cases must produce no CRITICAL or HIGH finding. The corpus is small and hand-written, so it guards against regressions in the existing patterns; it does not measure real-world detection rates. Add a case whenever you fix a missed detection or a false positive.
 
 ## Honest Static Scanner Scope & Limitations
 
