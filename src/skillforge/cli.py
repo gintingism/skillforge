@@ -14,7 +14,7 @@ import typer
 from .adapters import detect_adapters
 from .context_linter import lint_project_context
 from .errors import SecurityAuditError, SkillForgeError
-from .evals import init_evals, run_evals
+from .evals import detect_trigger_collisions, init_evals, run_evals
 from .mcp_server import run_mcp_server
 from .openapi import import_openapi
 from .optimizer import optimize_skill
@@ -819,6 +819,8 @@ def doctor(
                 }
             )
 
+    collisions = detect_trigger_collisions(packages)
+
     result = {
         "status": "FAILED" if failed_count > 0 else "HEALTHY",
         "skills_scanned": len(packages),
@@ -829,6 +831,7 @@ def doctor(
         "critical_issues": critical_findings,
         "high_issues": high_findings,
         "findings": all_findings,
+        "trigger_collisions": collisions,
     }
 
     if json_output:
@@ -849,6 +852,15 @@ def doctor(
         typer.echo("Findings:")
         for finding in all_findings:
             typer.echo(f"  [{finding['severity']}] {finding['skill']} -> {finding['rule_id']}: {finding['message']}")
+
+    if collisions:
+        typer.echo("\nTrigger Collisions (Confusability Warnings):")
+        for col in collisions:
+            shared_str = ", ".join(col["shared_triggers"])
+            typer.echo(
+                f"  [COLLISION] {col['skill_a']} <-> {col['skill_b']} "
+                f"(overlap: {int(col['overlap_ratio'] * 100)}% on: {shared_str})"
+            )
 
     if failed_count > 0:
         raise typer.Exit(code=1)

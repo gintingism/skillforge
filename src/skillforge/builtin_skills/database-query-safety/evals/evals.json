@@ -1,0 +1,23 @@
+[
+  {
+    "id": "trigger_explain_analyze_sql",
+    "prompt": "Optimize this slow SQL query and check EXPLAIN ANALYZE index coverage.",
+    "should_trigger": true,
+    "expected_keywords": ["EXPLAIN"]
+  },
+  {
+    "id": "trigger_rls_policy_audit",
+    "prompt": "Audit our PostgreSQL Row-Level Security (RLS) policies and relational schema.",
+    "should_trigger": true
+  },
+  {
+    "id": "suppress_svg_icon",
+    "prompt": "Export the company logo as a 64x64 SVG icon.",
+    "should_trigger": false
+  },
+  {
+    "id": "suppress_markdown_typo",
+    "prompt": "Fix the spelling mistake in the changelog heading.",
+    "should_trigger": false
+  }
+]

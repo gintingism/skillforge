@@ -84,11 +84,20 @@ def create_mcp_server(registry: Registry) -> MCPServer:
                 if rel in package.scripts:
                     content = package.scripts[rel]
                     return content[:CHARACTER_LIMIT] if len(content) > CHARACTER_LIMIT else content
+            elif clean_path.startswith("assets/"):
+                rel = clean_path[len("assets/") :]
+                if rel in package.assets:
+                    try:
+                        content = package.assets[rel].decode("utf-8")
+                    except UnicodeDecodeError:
+                        return json.dumps({"error": f"Asset '{resource_path}' is binary and cannot be returned as text"})
+                    return content[:CHARACTER_LIMIT] if len(content) > CHARACTER_LIMIT else content
             return json.dumps(
                 {
                     "error": f"Resource '{resource_path}' not found in skill '{name}'",
                     "available_references": sorted(f"references/{k}" for k in package.references),
                     "available_scripts": sorted(f"scripts/{k}" for k in package.scripts),
+                    "available_assets": sorted(f"assets/{k}" for k in package.assets),
                 }
             )
         except SkillForgeError as exc:

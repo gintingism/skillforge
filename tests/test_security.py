@@ -234,3 +234,29 @@ def test_auditor_flags_invalid_agentskills_name_format() -> None:
     assert any(f.rule_id == "QUAL-007" and f.severity == Severity.LOW for f in report.findings)
 
 
+def test_auditor_flags_broken_asset_pointer_and_nested_references() -> None:
+    skill = Skill(
+        name="pointer-check",
+        description="Use when testing asset and reference pointers",
+        body="# Pointer Check\nLoad `assets/missing-schema.json` and `references/first.md`.\n",
+    )
+    pkg = SkillPackage(
+        skill=skill,
+        references={
+            "first.md": "See deeper details in `references/second.md`.\n",
+            "second.md": "# Second\n",
+        },
+    )
+    report = SkillAuditor().audit_package(pkg)
+    assert report.passed is False
+    assert any(
+        f.rule_id == "QUAL-004" and "assets/missing-schema.json" in f.message
+        for f in report.findings
+    )
+    assert any(
+        f.rule_id == "QUAL-009" and f.file == "references/first.md"
+        for f in report.findings
+    )
+
+
+

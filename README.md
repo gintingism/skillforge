@@ -389,7 +389,7 @@ SkillForge includes a native MCP server conforming to the Agent Plugins 1.0 spec
 Exposed MCP tools:
 - `search_skills(query, limit)`: Search local and built-in skill catalogs.
 - `get_skill(name)`: Read the full `SKILL.md` instructions.
-- `get_skill_resource(name, resource_path)`: Read disclosed `references/*` or `scripts/*` files on demand with path traversal protection.
+- `get_skill_resource(name, resource_path)`: Read disclosed `references/*`, `scripts/*`, or text `assets/*` files on demand with path traversal protection.
 - `validate_skill(content)`: Test frontmatter syntax in memory.
 - `audit_skill(content)`: Audit a raw skill document for prompt injections, AST taint flows, and malicious patterns.
 - `skill://{name}`: Resource URI for direct document retrieval.
@@ -418,9 +418,9 @@ skillforge install systematic-debugging --global
 
 ---
 
-## Built-in Skills (26 Zero-Slop Skills)
+## Built-in Skills (29 Zero-Slop Skills)
 
-SkillForge ships with 26 practical engineering skills to address common agent failure modes identified in benchmark research:
+SkillForge ships with 29 practical engineering skills to address common agent failure modes identified in benchmark research:
 
 ### Code Quality, Security & Performance
 - `supply-chain-sentinel`: Check package existence, registry age, and run CVE audits (`pip-audit`, `npm audit`) before adding dependencies.
@@ -436,6 +436,9 @@ SkillForge ships with 26 practical engineering skills to address common agent fa
 - `git-workflow`: Atomic conventional commits, pre-staging diff checks, protected branch safety guardrails, and conflict pause protocol.
 - `test-driven-development`: Red-Green-Refactor development cycle with test runner discovery, failing reproduction assertions, and raw terminal exit criteria.
 - `dependency-upgrade`: Systematic version updates with changelog and CVE audits, incremental single-package bumps, and rollback safeguards.
+- `architecture-griller`: Pre-implementation design interrogation, trade-off matrix analysis, and Architecture Decision Record (ADR) authoring (`references/adr-template.md`).
+- `browser-qa-verifier`: Live headless browser QA with Playwright/DevTools, console/network error listeners, three-state UI verification, and accessible locator rules (`references/playwright-checklist.md`).
+- `database-query-safety`: SQL execution plan (`EXPLAIN ANALYZE`) auditing, composite B-Tree index ordering, non-blocking DDL migrations, and Row-Level Security (RLS) checks (`references/sql-anti-patterns.md`).
 
 ### Autonomous Loop Stability & Debugging
 - `systematic-debugging`: Four-phase diagnosis protocol (Reproduce, Isolate, Hypothesize, Surgical Patch) before touching code.

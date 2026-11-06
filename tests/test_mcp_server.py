@@ -14,8 +14,9 @@ def make_registry(tmp_path: Path) -> LocalRegistry:
     registry = LocalRegistry(tmp_path / "registry")
     registry.publish_package(
         SkillPackage(
-            skill=Skill("demo", "A demo skill", "# Demo\nSee `references/guide.md`.\n"),
+            skill=Skill("demo", "A demo skill", "# Demo\nSee `references/guide.md` and `assets/schema.json`.\n"),
             references={"guide.md": "# Deep Guide\n"},
+            assets={"schema.json": b'{"type": "object"}\n'},
         )
     )
     return registry
@@ -46,6 +47,10 @@ def test_mcp_tool_behavior_and_resource(tmp_path: Path) -> None:
         server.call_tool("get_skill_resource", {"name": "demo", "resource_path": "references/guide.md"})
     )
     assert "# Deep Guide" in disclosed.content[0].text
+    asset_res = asyncio.run(
+        server.call_tool("get_skill_resource", {"name": "demo", "resource_path": "assets/schema.json"})
+    )
+    assert '"type": "object"' in asset_res.content[0].text
     traversal = asyncio.run(
         server.call_tool("get_skill_resource", {"name": "demo", "resource_path": "../secret.txt"})
     )

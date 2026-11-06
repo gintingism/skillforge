@@ -31,10 +31,11 @@ Common attack vectors in community-shared skills include:
 | **`QUAL-001`** | **LOW** | Trigger Quality | Verifies whether the skill description includes explicit activation triggers (`when`, `use when`, `for`) necessary for token-efficient progressive disclosure. |
 | **`QUAL-002`** | **MEDIUM** | Spec Compliance | Ensures directory name matches the `name` field in YAML frontmatter and validates identifier safety. |
 | **`QUAL-003`** | **LOW** | Context Budget Limit | Flags `SKILL.md` bodies exceeding 500 lines or ~5,000 tokens so reference docs are extracted into `references/`. |
-| **`QUAL-004`** | **HIGH** | Broken Resource Pointer | Verifies that every `references/...` or `scripts/...` path cited in `SKILL.md` exists in the package. |
+| **`QUAL-004`** | **HIGH** | Broken Resource Pointer | Verifies that every `references/...`, `scripts/...`, or `assets/...` path cited in `SKILL.md` exists in the package. |
 | **`QUAL-006`** | **MEDIUM** | Applicability Hijacking | Flags overbroad trigger descriptions that attempt to force activation on every user prompt. |
 | **`QUAL-008`** | **LOW** | Metadata Value Types | The agentskills.io spec maps string keys to string values in `metadata`. Flags numbers and booleans such as `version: 1.0`; quote them (`version: "1.0"`). |
 | **`QUAL-007`** | **LOW** | agentskills.io Name Format | Validates strict naming compliance (`^[a-z0-9]+(-[a-z0-9]+)*$`) for portability across all runtimes. |
+| **`QUAL-009`** | **LOW** | Nested Reference Chain | Flags reference files that link to secondary `references/...` files instead of keeping progressive disclosure one-level-deep from `SKILL.md`. |
 
 ---
 

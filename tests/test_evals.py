@@ -4,7 +4,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from skillforge.cli import app
-from skillforge.evals import init_evals, run_evals
+from skillforge.evals import detect_trigger_collisions, init_evals, run_evals
 from skillforge.skill import Skill, SkillPackage
 
 runner = CliRunner()
@@ -93,3 +93,35 @@ def test_cli_test_command(tmp_path: Path) -> None:
     data = json.loads(res_json.stdout)
     assert data["passed"] is True
     assert data["total_cases"] == 4
+
+
+def test_detect_trigger_collisions_identifies_overlapping_skills() -> None:
+    pkg_a = SkillPackage(
+        skill=Skill(
+            "postgres-query-tuner",
+            "Optimize PostgreSQL database queries and inspect execution plans. Use when tuning slow SQL queries.",
+            "# Tuner\n",
+        )
+    )
+    pkg_b = SkillPackage(
+        skill=Skill(
+            "sql-query-optimizer",
+            "Optimize SQL database queries and review PostgreSQL execution plans. Use when fixing slow queries.",
+            "# Optimizer\n",
+        )
+    )
+    pkg_c = SkillPackage(
+        skill=Skill(
+            "css-layout-grid",
+            "Build responsive mobile flexbox and grid stylesheets. Use when styling frontend components.",
+            "# CSS\n",
+        )
+    )
+    collisions = detect_trigger_collisions(
+        {"postgres-query-tuner": pkg_a, "sql-query-optimizer": pkg_b, "css-layout-grid": pkg_c}
+    )
+    assert len(collisions) == 1
+    assert collisions[0]["skill_a"] == "postgres-query-tuner"
+    assert collisions[0]["skill_b"] == "sql-query-optimizer"
+    assert collisions[0]["overlap_ratio"] >= 0.5
+

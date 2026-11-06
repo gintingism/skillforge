@@ -1,0 +1,23 @@
+[
+  {
+    "id": "trigger_architecture_tradeoffs",
+    "prompt": "Grill my proposed microservice architecture and help me record an ADR for the event queue.",
+    "should_trigger": true,
+    "expected_keywords": ["ADR"]
+  },
+  {
+    "id": "trigger_rfc_evaluation",
+    "prompt": "We are evaluating an RFC for a new caching layer; challenge our architectural assumptions.",
+    "should_trigger": true
+  },
+  {
+    "id": "suppress_unrelated_css",
+    "prompt": "Fix the padding on the mobile navigation bar button.",
+    "should_trigger": false
+  },
+  {
+    "id": "suppress_unrelated_typo",
+    "prompt": "Rename the local variable usr_id to user_id in utils.py.",
+    "should_trigger": false
+  }
+]

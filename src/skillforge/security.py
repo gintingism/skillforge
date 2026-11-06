@@ -131,6 +131,7 @@ class AuditReport:
             "QUAL-004": ("Broken Resource Pointer", "Checks whether cited scripts or references exist in the package."),
             "QUAL-006": ("Applicability Hijacking", "Flags overbroad trigger descriptions claiming all tasks."),
             "QUAL-007": ("Standard Spec Name Formatting", "Checks whether skill name conforms to agentskills.io standard (lowercase alphanumeric and hyphens only, no leading or trailing hyphens)."),
+            "QUAL-009": ("Nested Reference Chain", "Flags reference files that link to secondary reference files instead of keeping disclosure one-level-deep from SKILL.md."),
         }
         sarif_rules: list[dict[str, Any]] = []
         for rid, (rname, rdesc) in sorted(rule_meta.items()):
@@ -276,7 +277,7 @@ _TRIGGER_PATTERN = re.compile(r"(?i)\b(when|for|if|triggers?|triggered|tasks?)\b
 _MAX_BODY_LINES = 500
 _MAX_BODY_TOKENS = 5000
 _DISCLOSED_PATH_PATTERN = re.compile(
-    r"(?:`|\()(?:\./)?(scripts|references)/([a-zA-Z0-9_.-]+(?:/[a-zA-Z0-9_.-]+)*\.[a-zA-Z0-9]+)(?:`|\))"
+    r"(?:`|\()(?:\./)?(scripts|references|assets)/([a-zA-Z0-9_.-]+(?:/[a-zA-Z0-9_.-]+)*\.[a-zA-Z0-9]+)(?:`|\))"
 )
 _MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 _UNRESTRICTED_TOOL_PATTERN = re.compile(
@@ -623,11 +624,12 @@ class SkillAuditor:
                 if (folder, rel_path) in seen:
                     continue
                 seen.add((folder, rel_path))
-                exists = (
-                    rel_path in package.scripts
-                    if folder == "scripts"
-                    else rel_path in package.references
-                )
+                if folder == "scripts":
+                    exists = rel_path in package.scripts
+                elif folder == "references":
+                    exists = rel_path in package.references
+                else:
+                    exists = rel_path in package.assets
                 if not exists:
                     findings.append(
                         AuditFinding(
@@ -642,6 +644,32 @@ class SkillAuditor:
                             snippet=line.strip(),
                         )
                     )
+
+        for ref_name, ref_content in sorted(package.references.items()):
+            ref_file = f"references/{ref_name}"
+            in_ref_fence = False
+            for r_idx, r_line in enumerate(ref_content.splitlines(), start=1):
+                if r_line.lstrip().startswith(("```", "~~~")):
+                    in_ref_fence = not in_ref_fence
+                    continue
+                if in_ref_fence:
+                    continue
+                for match in _DISCLOSED_PATH_PATTERN.finditer(r_line):
+                    folder, rel_path = match.group(1), match.group(2)
+                    if folder == "references" and rel_path != ref_name:
+                        findings.append(
+                            AuditFinding(
+                                rule_id="QUAL-009",
+                                severity=Severity.LOW,
+                                message=(
+                                    f"Nested reference chain '{folder}/{rel_path}' inside '{ref_file}': "
+                                    "link reference files directly from SKILL.md (one-level-deep)"
+                                ),
+                                file=ref_file,
+                                line=r_idx,
+                                snippet=r_line.strip(),
+                            )
+                        )
         return findings
 
     def audit_file_or_dir(self, path: Path) -> AuditReport:

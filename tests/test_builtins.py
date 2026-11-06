@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from skillforge.adapters import ClaudeCodeAdapter, CopilotAdapter, CursorAdapter, detect_adapters
+from skillforge.evals import run_evals
 from skillforge.registry import BuiltinRegistry, CompositeRegistry, LocalRegistry
 from skillforge.security import SkillAuditor
 
@@ -11,12 +12,15 @@ def test_builtin_registry_lists_and_loads_all_builtin_skills() -> None:
     assert {skill.name for skill in skills} == {
         "agent-observability",
         "antislop-code",
+        "architecture-griller",
         "blast-radius-containment",
+        "browser-qa-verifier",
         "caveman",
         "code-review",
         "cognitive-loop-breaker",
         "context-compactor",
         "contract-test-generator",
+        "database-query-safety",
         "dependency-upgrade",
         "flaky-test-isolation",
         "git-workflow",
@@ -45,6 +49,13 @@ def test_builtin_registry_lists_and_loads_all_builtin_skills() -> None:
 
     architect_pkg = registry.get_package("skill-architect")
     assert "mechanics.md" in architect_pkg.references
+
+    for name_with_evals in ("architecture-griller", "browser-qa-verifier", "database-query-safety"):
+        pkg = registry.get_package(name_with_evals)
+        assert pkg.references, f"{name_with_evals} should bundle progressive disclosure references/"
+        assert pkg.source_dir is not None
+        eval_report = run_evals(pkg.source_dir)
+        assert eval_report.passed is True, f"{name_with_evals} evals failed: {eval_report.results}"
 
 
 def test_builtin_registry_install_writes_skill(tmp_path: Path) -> None:

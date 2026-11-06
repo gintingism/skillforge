@@ -6,7 +6,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from .errors import SkillForgeError
 from .security import Severity, SkillAuditor
@@ -83,16 +83,89 @@ class EvalSuiteReport:
         return "\n".join(lines)
 
 
+_STOPWORDS = frozenset({
+    "use", "when", "for", "and", "the", "with", "this", "that", "you",
+    "your", "will", "from", "are", "have", "been", "also", "into",
+    "before", "after", "during", "while", "working", "tasks", "task",
+    "skill", "skills", "agent", "agents", "using", "asked", "need",
+    "needed", "doing", "executing", "operations", "actions", "make",
+    "making", "existing", "new", "all", "any", "only", "across", "every",
+})
+
+
+def _normalize_token(word: str) -> str:
+    """Normalize English technical word inflections to a canonical stem."""
+    if len(word) <= 4:
+        return word
+    if word.endswith("ies") and len(word) > 5:
+        return word[:-3] + "y"
+    if word.endswith("ations") and len(word) > 8:
+        return word[:-6] + "e"
+    if word.endswith("ation") and len(word) > 7:
+        return word[:-5] + "e"
+    for suffix in ("ing", "ers", "er", "ed", "es", "s"):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 4:
+            stem = word[: -len(suffix)]
+            if len(stem) >= 4 and stem[-1] == stem[-2] and stem[-1] not in "lsz":
+                stem = stem[:-1]
+            return stem
+    return word
+
+
+def _tokenize_with_stems(text: str) -> set[str]:
+    """Extract lowercase words and their normalized stems, excluding stopwords."""
+    raw_words = [w for w in re.findall(r"\b[a-z]{3,}\b", text.lower()) if w not in _STOPWORDS]
+    tokens = set(raw_words)
+    for w in raw_words:
+        stem = _normalize_token(w)
+        if stem not in _STOPWORDS:
+            tokens.add(stem)
+    return tokens
+
+
 def _extract_trigger_keywords(description: str, name: str) -> set[str]:
     """Extract domain trigger tokens from skill name and description."""
-    words = set(re.findall(r"\b[a-z]{3,}\b", name.lower()))
-    words.update(re.findall(r"\b[a-z]{3,}\b", description.lower()))
-    # Exclude common meta stop-words
-    stopwords = {
-        "use", "when", "for", "and", "the", "with", "this", "that", "you",
-        "your", "will", "from", "are", "have", "been", "also", "into",
-    }
-    return words - stopwords
+    return _tokenize_with_stems(f"{name} {description}")
+
+
+def detect_trigger_collisions(
+    packages: Mapping[str, SkillPackage],
+    threshold: float = 0.5,
+) -> list[dict[str, Any]]:
+    """Detect high trigger-keyword overlap between active model-invoked skills."""
+    skill_tokens: dict[str, set[str]] = {}
+    for name, pkg in sorted(packages.items()):
+        if pkg.skill.disable_model_invocation:
+            continue
+        raw = [
+            _normalize_token(w)
+            for w in re.findall(r"\b[a-z]{3,}\b", f"{pkg.skill.name} {pkg.skill.description}".lower())
+            if w not in _STOPWORDS
+        ]
+        cleaned = {w for w in raw if w not in _STOPWORDS}
+        if cleaned:
+            skill_tokens[name] = cleaned
+
+    names = sorted(skill_tokens)
+    collisions: list[dict[str, Any]] = []
+    for i, name_a in enumerate(names):
+        for name_b in names[i + 1 :]:
+            set_a = skill_tokens[name_a]
+            set_b = skill_tokens[name_b]
+            shared = sorted(set_a & set_b)
+            min_len = min(len(set_a), len(set_b))
+            if len(shared) >= 3 and min_len > 0:
+                ratio = round(len(shared) / min_len, 2)
+                if ratio >= threshold:
+                    collisions.append(
+                        {
+                            "skill_a": name_a,
+                            "skill_b": name_b,
+                            "overlap_ratio": ratio,
+                            "shared_triggers": shared,
+                        }
+                    )
+    return collisions
 
 
 def init_evals(package_dir: Path) -> Path:
@@ -179,7 +252,7 @@ def run_evals(package_dir: Path, evals_path: Path | None = None) -> EvalSuiteRep
         expected_kw = [str(k).lower() for k in case.get("expected_keywords", [])]
         forbidden_kw = [str(k).lower() for k in case.get("forbidden_keywords", [])]
 
-        prompt_words = set(re.findall(r"\b[a-z]{3,}\b", prompt.lower()))
+        prompt_words = _tokenize_with_stems(prompt)
         matched_trigger = bool(prompt_words.intersection(trigger_words))
 
         case_passed = True

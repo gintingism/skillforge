@@ -1,0 +1,23 @@
+[
+  {
+    "id": "trigger_browser_console_audit",
+    "prompt": "Verify the rendered web page in a headless browser and inspect browser console errors with Playwright.",
+    "should_trigger": true,
+    "expected_keywords": ["Playwright"]
+  },
+  {
+    "id": "trigger_responsive_layout_qa",
+    "prompt": "Check the responsive layouts and audit network requests on the checkout page.",
+    "should_trigger": true
+  },
+  {
+    "id": "suppress_backend_hash_function",
+    "prompt": "Compute a SHA-256 digest of a byte buffer in Rust.",
+    "should_trigger": false
+  },
+  {
+    "id": "suppress_git_rebase",
+    "prompt": "Rebase the feature branch onto main and squash commits.",
+    "should_trigger": false
+  }
+]
