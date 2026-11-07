@@ -13,6 +13,7 @@ def test_builtin_registry_lists_and_loads_all_builtin_skills() -> None:
         "agent-observability",
         "antislop-code",
         "architecture-griller",
+        "atomic-rollback-guard",
         "blast-radius-containment",
         "browser-qa-verifier",
         "caveman",
@@ -24,6 +25,7 @@ def test_builtin_registry_lists_and_loads_all_builtin_skills() -> None:
         "dependency-upgrade",
         "flaky-test-isolation",
         "git-workflow",
+        "git-worktree-isolation",
         "human-in-the-loop",
         "mcp-tool-designer",
         "performance-profiler",
@@ -38,6 +40,7 @@ def test_builtin_registry_lists_and_loads_all_builtin_skills() -> None:
         "systematic-debugging",
         "tavily-search",
         "test-driven-development",
+        "traceback-postmortem",
         "zero-downtime-migration",
     }
     auditor = SkillAuditor()

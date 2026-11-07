@@ -124,6 +124,7 @@ class AuditReport:
             "SEC-009": ("Unrestricted Tool Scope", "Flags wildcard tool permissions (such as '*' or 'Bash(*)') in YAML frontmatter."),
             "SEC-010": ("Markdown-as-Installer Deceptive Instruction", "Detects instructions prompting the user or agent to execute unverified install scripts or remote terminal pipelines."),
             "SEC-011": ("Executable Payload in Assets", "Detects native executables or script file types stored under assets/ instead of scripts/."),
+            "SEC-012": ("Allowed-Tools Scope Violation", "Detects shell commands or execution scripts in skill body when allowed-tools excludes shell execution or restricts tools."),
             "QUAL-008": ("Metadata Value Types", "Checks that metadata maps string keys to string values as the agentskills.io spec requires."),
             "QUAL-001": ("Trigger Quality", "Checks whether skill descriptions include explicit activation conditions."),
             "QUAL-002": ("Directory Alignment", "Checks whether directory name matches frontmatter name."),
@@ -282,6 +283,22 @@ _DISCLOSED_PATH_PATTERN = re.compile(
 _MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 _UNRESTRICTED_TOOL_PATTERN = re.compile(
     r"(?i)(?:^|[\s,])(\*|(?:bash|sh|shell|cmd|powershell)\(\*\))(?:$|[\s,])"
+)
+_EXECUTION_TOOL_NAMES = frozenset({
+    "bash",
+    "sh",
+    "shell",
+    "terminal",
+    "powershell",
+    "pwsh",
+    "cmd",
+    "run_command",
+    "execute_command",
+    "exec",
+    "subprocess",
+})
+_SHELL_FENCE_PATTERN = re.compile(
+    r"```(?:bash|sh|shell|zsh|powershell|pwsh|cmd)\b", re.IGNORECASE
 )
 _MARKDOWN_INSTALLER_PATTERNS: list[re.Pattern[str]] = [
     re.compile(
@@ -482,6 +499,44 @@ class SkillAuditor:
                     snippet=f"allowed-tools: {package.skill.allowed_tools}",
                 )
             )
+
+        if package.skill.allowed_tools:
+            allowed_tokens = {
+                t.strip().lower()
+                for t in re.findall(r"[a-zA-Z0-9_.*-]+(?:\([^)]*\))?", package.skill.allowed_tools)
+                if t.strip()
+            }
+            has_exec_tool = any(
+                re.sub(r"\(.*\)", "", t).strip() in _EXECUTION_TOOL_NAMES or t == "*"
+                for t in allowed_tokens
+            )
+            if not has_exec_tool:
+                if _SHELL_FENCE_PATTERN.search(package.skill.body):
+                    findings.append(
+                        AuditFinding(
+                            rule_id="SEC-012",
+                            severity=Severity.HIGH,
+                            message=(
+                                f"Skill body contains shell execution blocks, but frontmatter allowed-tools "
+                                f"excludes command execution: '{package.skill.allowed_tools}'"
+                            ),
+                            file="SKILL.md",
+                            snippet=f"allowed-tools: {package.skill.allowed_tools}",
+                        )
+                    )
+                elif package.scripts:
+                    findings.append(
+                        AuditFinding(
+                            rule_id="SEC-012",
+                            severity=Severity.HIGH,
+                            message=(
+                                f"Skill package contains executable scripts in scripts/, but frontmatter allowed-tools "
+                                f"excludes command execution: '{package.skill.allowed_tools}'"
+                            ),
+                            file="SKILL.md",
+                            snippet=f"allowed-tools: {package.skill.allowed_tools}",
+                        )
+                    )
 
         if package.source_dir and package.source_dir.name != package.skill.name:
             findings.append(

@@ -188,6 +188,40 @@ def test_auditor_flags_unrestricted_allowed_tools_scope() -> None:
     assert any(f.rule_id == "SEC-009" and f.severity == Severity.MEDIUM for f in report.findings)
 
 
+def test_auditor_flags_allowed_tools_scope_violation_on_shell_blocks() -> None:
+    skill = Skill(
+        name="restricted-tools-shell",
+        description="Use when testing tool scope violations",
+        body="# Shell block\n```bash\nls -la\n```\n",
+        allowed_tools="read_file, list_dir",
+    )
+    report = SkillAuditor().audit_package(SkillPackage(skill=skill))
+    assert any(f.rule_id == "SEC-012" and f.severity == Severity.HIGH for f in report.findings)
+
+
+def test_auditor_flags_allowed_tools_scope_violation_on_bundled_scripts() -> None:
+    skill = Skill(
+        name="restricted-tools-scripts",
+        description="Use when testing tool scope violations on scripts",
+        body="# Just instructions\n",
+        allowed_tools="read_file",
+    )
+    package = SkillPackage(skill=skill, scripts={"worker.py": "print('work')"})
+    report = SkillAuditor().audit_package(package)
+    assert any(f.rule_id == "SEC-012" and f.severity == Severity.HIGH for f in report.findings)
+
+
+def test_auditor_permits_shell_blocks_when_execution_tool_declared() -> None:
+    skill = Skill(
+        name="permitted-tools-shell",
+        description="Use when testing permitted execution scope",
+        body="# Allowed shell\n```bash\npytest\n```\n",
+        allowed_tools="read_file, run_command",
+    )
+    report = SkillAuditor().audit_package(SkillPackage(skill=skill))
+    assert not any(f.rule_id == "SEC-012" for f in report.findings)
+
+
 def test_audit_path_supports_multi_skill_collection_directory(tmp_path: Path) -> None:
     collection = tmp_path / "skills"
     s1 = collection / "alpha-skill"

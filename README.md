@@ -121,6 +121,7 @@ The auditor checks for:
 - **Markdown Link Spoofing (SEC-007):** Mismatched visible URL hostnames and target URL destinations hiding deceptive redirects.
 - **Python AST & Taint Analysis (SEC-008):** Structural AST inspection of bundled Python scripts for `eval()`, `exec()`, `subprocess(..., shell=True)`, `pickle.loads()`, and environment-to-network taint flows.
 - **Unrestricted Tool Scope (SEC-009):** Wildcard tool permissions (`*`, `Bash(*)`) in `allowed-tools` frontmatter.
+- **Allowed-Tools Scope Enforcer (SEC-012):** Flags shell execution blocks or bundled scripts when frontmatter `allowed-tools` excludes command execution.
 - **Trigger Quality (QUAL-001):** Ensures descriptions specify concrete activation conditions.
 - **Directory Alignment (QUAL-002):** Ensures folder name matches the frontmatter `name`.
 - **Progressive Disclosure Budget (QUAL-003):** Flags `SKILL.md` bodies exceeding 500 lines or ~5,000 tokens so secondary reference material is moved to `references/`.
@@ -418,9 +419,9 @@ skillforge install systematic-debugging --global
 
 ---
 
-## Built-in Skills (29 Zero-Slop Skills)
+## Built-in Skills (32 Zero-Slop Skills)
 
-SkillForge ships with 29 practical engineering skills to address common agent failure modes identified in benchmark research:
+SkillForge ships with 32 practical engineering skills to address common agent failure modes identified in benchmark research:
 
 ### Code Quality, Security & Performance
 - `supply-chain-sentinel`: Check package existence, registry age, and run CVE audits (`pip-audit`, `npm audit`) before adding dependencies.
@@ -445,6 +446,9 @@ SkillForge ships with 29 practical engineering skills to address common agent fa
 - `cognitive-loop-breaker`: Three-strikes circuit breaker that forces a hard `git restore` and hypothesis invalidation when stuck in repetitive edit-fail loops.
 - `flaky-test-isolation`: Stress-reproduction loop (50x iterations) and diagnosis protocol for race conditions, clock skew, and state leakage.
 - `runtime-api-verification`: Interactive signature introspection (`inspect`, `dir()`, compiler definitions) to prevent hallucinated arguments.
+- `git-worktree-isolation`: Isolated Git worktrees for concurrent tasks, speculative fixes, and clean rollback boundaries (`references/worktree-cleanup-protocol.md`).
+- `atomic-rollback-guard`: Mandatory restore checkpoints before destructive code mutations and automated hard rollbacks on test failure (`references/rollback-decision-tree.md`).
+- `traceback-postmortem`: 5-line root cause distillation from lengthy stack traces to prevent context window poisoning (`references/5-whys-template.md`).
 
 ### Context Efficiency & Multi-Agent Operations
 - `skill-architect`: Multi-file progressive disclosure guide for authoring low-token `SKILL.md`, `AGENTS.md`, and `CLAUDE.md` files.
