@@ -36,13 +36,13 @@
     "websiteURL": "https://github.com/gintingism/skillforge",
     "privacyPolicyURL": "https://github.com/gintingism/skillforge/blob/main/SECURITY.md",
     "termsOfServiceURL": "https://github.com/gintingism/skillforge/blob/main/LICENSE",
-    "composerIcon": "skillforge_launch_cover.png",
-    "logo": "skillforge_launch_cover.png",
+    "composerIcon": "https://raw.githubusercontent.com/gintingism/skillforge/main/docs/assets/logo.png",
+    "logo": "https://raw.githubusercontent.com/gintingism/skillforge/main/docs/assets/logo.png",
     "screenshots": [
-      "skillforge_launch_cover.png",
-      "skillforge_shot2_token_budget.png",
-      "skillforge_shot3_security_audit.png",
-      "skillforge_shot4_universal_sync.png"
+      "https://raw.githubusercontent.com/gintingism/skillforge/main/skillforge_launch_cover.png",
+      "https://raw.githubusercontent.com/gintingism/skillforge/main/skillforge_shot2_token_budget.png",
+      "https://raw.githubusercontent.com/gintingism/skillforge/main/skillforge_shot3_security_audit.png",
+      "https://raw.githubusercontent.com/gintingism/skillforge/main/skillforge_shot4_universal_sync.png"
     ]
   }
 }

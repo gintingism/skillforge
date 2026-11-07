@@ -12,14 +12,22 @@
   "plugins": [
     {
       "name": "skillforge",
-      "source": "./",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Development & Workflow",
       "description": "Universal package manager, security auditor, and context token profiler for portable agent skills (SKILL.md).",
       "version": "0.4.2",
-      "category": "Development & Workflow",
       "skills": [
         "./src/skillforge/builtin_skills/agent-observability",
         "./src/skillforge/builtin_skills/antislop-code",
         "./src/skillforge/builtin_skills/architecture-griller",
+        "./src/skillforge/builtin_skills/atomic-rollback-guard",
         "./src/skillforge/builtin_skills/blast-radius-containment",
         "./src/skillforge/builtin_skills/browser-qa-verifier",
         "./src/skillforge/builtin_skills/caveman",
@@ -31,6 +39,7 @@
         "./src/skillforge/builtin_skills/dependency-upgrade",
         "./src/skillforge/builtin_skills/flaky-test-isolation",
         "./src/skillforge/builtin_skills/git-workflow",
+        "./src/skillforge/builtin_skills/git-worktree-isolation",
         "./src/skillforge/builtin_skills/human-in-the-loop",
         "./src/skillforge/builtin_skills/mcp-tool-designer",
         "./src/skillforge/builtin_skills/performance-profiler",
@@ -45,6 +54,7 @@
         "./src/skillforge/builtin_skills/systematic-debugging",
         "./src/skillforge/builtin_skills/tavily-search",
         "./src/skillforge/builtin_skills/test-driven-development",
+        "./src/skillforge/builtin_skills/traceback-postmortem",
         "./src/skillforge/builtin_skills/zero-downtime-migration"
       ]
     }
