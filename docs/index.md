@@ -1,6 +1,10 @@
 # SkillForge Documentation
 
-SkillForge is a package manager, security auditor, and MCP server for portable agent skills (`SKILL.md`).
+<div align="center">
+  <img src="assets/logo.svg" alt="SkillForge Logo" width="160" height="160" />
+</div>
+
+SkillForge is a universal package manager, security auditor, and MCP server for portable agent skills (`SKILL.md`).
 
 ## What it does
 
@@ -12,7 +16,7 @@ SkillForge is a package manager, security auditor, and MCP server for portable a
 - **Context Budget Profiler (`skillforge budget`):** Measure startup pointer token cost vs on-demand body token cost across installed or built-in skills.
 - **Cryptographic Lockfile & Team Sync:** Pin SHA-256 package digests in `skillforge.lock` and deterministically sync across machines with `skillforge sync`.
 - **Multi-Assistant Adapters:** Installs skills automatically into Google Antigravity, Claude Code, Cursor, Windsurf, Cline, universal `AGENTS.md`, and GitHub Copilot.
-- **Built-in Skills:** Ships 22 production-grade engineering workflows without fluff.
+- **Built-in Skills:** Ships 32 production-grade engineering workflows without fluff.
 - **MCP Server:** Exposes skills, progressive disclosure resources (`references/`, `scripts/`), and security scanning to any MCP-compatible client.
 
 ## Quick Installation
