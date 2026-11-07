@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/assets/logo.svg" alt="SkillForge Logo" width="160" height="160" />
+
 # SkillForge
 
 **Universal package manager, security auditor, and context token profiler for portable AI agent skills (`SKILL.md`).**
