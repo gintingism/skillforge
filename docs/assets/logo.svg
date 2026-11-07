@@ -1,161 +1,189 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <defs>
-    <!-- Background Gradient -->
-    <radialGradient id="bgGlow" cx="50%" cy="42%" r="60%">
-      <stop offset="0%" stop-color="#0e1726" />
-      <stop offset="70%" stop-color="#070a10" />
-      <stop offset="100%" stop-color="#040609" />
+    <!-- Deep Space Background Radial -->
+    <radialGradient id="canvasBg" cx="50%" cy="45%" r="65%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="60%" stop-color="#080d1a" />
+      <stop offset="100%" stop-color="#040711" />
     </radialGradient>
 
-    <!-- Shield Border Gradient -->
-    <linearGradient id="shieldBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+    <!-- Outer Rim Cyber Neon Gradient -->
+    <linearGradient id="neonCyan" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#38bdf8" />
       <stop offset="50%" stop-color="#0284c7" />
-      <stop offset="100%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#0369a1" />
     </linearGradient>
 
-    <!-- Shield Fill Gradient -->
-    <linearGradient id="shieldFill" x1="50%" y1="0%" x2="50%" y2="100%">
-      <stop offset="0%" stop-color="#111c30" stop-opacity="0.8" />
-      <stop offset="100%" stop-color="#090d16" stop-opacity="0.95" />
+    <!-- Shield Face Gradient -->
+    <linearGradient id="shieldPlate" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#0b1120" stop-opacity="0.95" />
     </linearGradient>
 
-    <!-- Anvil Metal Top Gradient -->
-    <linearGradient id="anvilTop" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#94a3b8" />
-      <stop offset="40%" stop-color="#f8fafc" />
-      <stop offset="80%" stop-color="#cbd5e1" />
-      <stop offset="100%" stop-color="#64748b" />
+    <!-- Anvil Steel Face Gradient -->
+    <linearGradient id="anvilSteel" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#64748b" />
+      <stop offset="25%" stop-color="#cbd5e1" />
+      <stop offset="50%" stop-color="#f8fafc" />
+      <stop offset="75%" stop-color="#cbd5e1" />
+      <stop offset="100%" stop-color="#475569" />
     </linearGradient>
 
-    <!-- Anvil Body Gradient -->
-    <linearGradient id="anvilBody" x1="0%" y1="0%" x2="100%" y2="100%">
+    <!-- Anvil Facet Shadows -->
+    <linearGradient id="facetDeep" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#0284c7" />
-      <stop offset="50%" stop-color="#0369a1" />
-      <stop offset="100%" stop-color="#0c4a6e" />
+      <stop offset="100%" stop-color="#082f49" />
     </linearGradient>
 
-    <!-- Core Spark Glow -->
+    <!-- Forge Spark Radial Glow -->
     <radialGradient id="sparkGlow" cx="50%" cy="50%" r="50%">
       <stop offset="0%" stop-color="#38bdf8" stop-opacity="1" />
-      <stop offset="45%" stop-color="#0284c7" stop-opacity="0.6" />
-      <stop offset="100%" stop-color="#0284c7" stop-opacity="0" />
+      <stop offset="35%" stop-color="#0284c7" stop-opacity="0.7" />
+      <stop offset="70%" stop-color="#0369a1" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#0369a1" stop-opacity="0" />
     </radialGradient>
 
-    <!-- Forge Ember Spark -->
-    <linearGradient id="emberGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#fbbf24" />
-      <stop offset="100%" stop-color="#f97316" />
+    <!-- Molten Core Ember Gradient -->
+    <linearGradient id="moltenEmber" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fde047" />
+      <stop offset="40%" stop-color="#fb923c" />
+      <stop offset="100%" stop-color="#ea580c" />
     </linearGradient>
 
-    <!-- Drop Shadow Filters -->
-    <filter id="glowFilter" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="12" result="blur" />
+    <!-- Soft Bloom Filter -->
+    <filter id="bloomFilter" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
       <feComposite in="SourceGraphic" in2="blur" operator="over" />
     </filter>
   </defs>
 
-  <!-- Background Canvas -->
-  <rect width="800" height="800" fill="url(#bgGlow)" rx="48" />
+  <!-- Canvas Background with Rounded Corners -->
+  <rect width="1024" height="1024" fill="url(#canvasBg)" rx="64" />
 
-  <!-- Subtle Precision Grid Lines -->
-  <g opacity="0.08" stroke="#38bdf8" stroke-width="1">
-    <line x1="160" y1="0" x2="160" y2="800" />
-    <line x1="320" y1="0" x2="320" y2="800" />
-    <line x1="480" y1="0" x2="480" y2="800" />
-    <line x1="640" y1="0" x2="640" y2="800" />
-    <line x1="0" y1="160" x2="800" y2="160" />
-    <line x1="0" y1="320" x2="800" y2="320" />
-    <line x1="0" y1="480" x2="800" y2="480" />
-    <line x1="0" y1="640" x2="800" y2="640" />
+  <!-- Subtle Blueprint Tech Construction Grid -->
+  <g opacity="0.06" stroke="#38bdf8" stroke-width="1.5">
+    <!-- Concentric Target Circles -->
+    <circle cx="512" cy="420" r="160" fill="none" />
+    <circle cx="512" cy="420" r="280" fill="none" />
+    <circle cx="512" cy="420" r="400" fill="none" stroke-dasharray="8 8" />
+    <!-- Diagonal Axis Lines -->
+    <line x1="112" y1="20" x2="912" y2="820" />
+    <line x1="912" y1="20" x2="112" y2="820" />
+    <!-- Vertical & Horizontal Centers -->
+    <line x1="512" y1="0" x2="512" y2="1024" stroke-dasharray="6 6" />
+    <line x1="0" y1="420" x2="1024" y2="420" stroke-dasharray="6 6" />
   </g>
 
-  <!-- Outer Security Shield (Beveled Hexagonal Shield) -->
-  <g id="shield-structure">
-    <!-- Outer Shield Ambient Glow -->
-    <polygon points="400,105 605,200 605,395 400,565 195,395 195,200"
-             fill="none" stroke="#0284c7" stroke-width="8" opacity="0.25" filter="url(#glowFilter)" />
+  <!-- Outer Hexagonal Security Shield Framework -->
+  <g id="shield-armor">
+    <!-- Shield Outer Ambient Halo -->
+    <path d="M 512,120 L 784,248 L 784,504 L 512,712 L 240,504 L 240,248 Z"
+          fill="none" stroke="#0284c7" stroke-width="12" opacity="0.2" filter="url(#bloomFilter)" />
 
-    <!-- Outer Shield Body -->
-    <polygon points="400,110 600,205 600,390 400,560 200,390 200,205"
-             fill="url(#shieldFill)" stroke="url(#shieldBorder)" stroke-width="4" stroke-linejoin="round" />
+    <!-- Shield Heavy Armor Body -->
+    <path d="M 512,128 L 776,252 L 776,496 L 512,698 L 248,496 L 248,252 Z"
+          fill="url(#shieldPlate)" stroke="url(#neonCyan)" stroke-width="4.5" stroke-linejoin="round" />
 
-    <!-- Inner Shield Inset Line -->
-    <polygon points="400,132 580,217 580,378 400,532 220,378 220,217"
-             fill="none" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.4" />
+    <!-- Inner Shield Inset Circuit Path -->
+    <path d="M 512,160 L 744,270 L 744,476 L 512,656 L 280,476 L 280,270 Z"
+          fill="none" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="10 6" opacity="0.45" />
+
+    <!-- Corner Alignment Nodes (Hardware Mounts) -->
+    <circle cx="512" cy="128" r="4" fill="#38bdf8" />
+    <circle cx="776" cy="252" r="4" fill="#38bdf8" />
+    <circle cx="776" cy="496" r="4" fill="#38bdf8" />
+    <circle cx="512" cy="698" r="4" fill="#38bdf8" />
+    <circle cx="248" cy="496" r="4" fill="#38bdf8" />
+    <circle cx="248" cy="252" r="4" fill="#38bdf8" />
   </g>
 
-  <!-- Central Forge Anvil (Faceted Geometric Architecture) -->
-  <g id="anvil-core">
-    <!-- Anvil Top Face (The Hardened Plate) -->
-    <!-- Flat anvil horn pointing left, robust heel on right -->
-    <polygon points="260,265 310,240 510,240 540,265 490,285 295,285"
-             fill="url(#anvilTop)" />
+  <!-- The Heavy Precision Anvil (Faceted Monolith) -->
+  <g id="anvil-monolith">
+    <!-- 1. Upper Striking Face (Hardened Top Plate with Left Horn & Right Heel) -->
+    <path d="M 320,312 L 396,280 L 628,280 L 704,312 L 640,336 L 384,336 Z"
+          fill="url(#anvilSteel)" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round" />
 
-    <!-- Anvil Face Highlight Edge -->
-    <polyline points="260,265 310,240 510,240 540,265"
-              fill="none" stroke="#ffffff" stroke-width="2" opacity="0.8" />
+    <!-- 2. Left Aerodynamic Horn Facet -->
+    <path d="M 320,312 L 384,336 L 440,432 L 400,432 Z"
+          fill="url(#facetDeep)" opacity="0.9" />
 
-    <!-- Anvil Waist (Faceted Tapered Center) -->
-    <polygon points="295,285 490,285 450,370 335,370"
-             fill="url(#anvilBody)" />
+    <!-- 3. Right Stepped Heel Facet -->
+    <path d="M 704,312 L 640,336 L 584,432 L 624,432 Z"
+          fill="#0c4a6e" opacity="0.95" />
 
-    <!-- Anvil Left Bevel Facet -->
-    <polygon points="260,265 295,285 335,370 310,370"
-             fill="#0369a1" opacity="0.7" />
+    <!-- 4. Central Inset Anvil Body (Waist) -->
+    <path d="M 384,336 L 640,336 L 584,432 L 440,432 Z"
+          fill="#0369a1" />
 
-    <!-- Anvil Right Bevel Facet -->
-    <polygon points="540,265 490,285 450,370 475,370"
-             fill="#082f49" opacity="0.8" />
+    <!-- 5. Negative Space Chisel Vents -->
+    <polygon points="412,352 432,352 452,416 432,416" fill="#0b1329" opacity="0.75" />
+    <polygon points="612,352 592,352 572,416 592,416" fill="#0b1329" opacity="0.75" />
 
-    <!-- Anvil Base (Heavy Foundation) -->
-    <polygon points="310,370 475,370 515,435 270,435"
-             fill="url(#anvilTop)" />
+    <!-- 6. Heavy Flared Pedestal Base -->
+    <path d="M 400,432 L 624,432 L 676,512 L 348,512 Z"
+          fill="url(#anvilSteel)" stroke="#94a3b8" stroke-width="1.5" stroke-linejoin="round" />
 
-    <!-- Anvil Base Bottom Shadow -->
-    <polygon points="270,435 515,435 500,452 285,452"
-             fill="#0f172a" />
+    <!-- 7. Base Drop Shadow Foundation -->
+    <path d="M 348,512 L 676,512 L 656,532 L 368,532 Z"
+          fill="#020617" />
   </g>
 
-  <!-- Central Energy Core: The Agent Skill Spark -->
-  <g id="skill-spark">
-    <!-- Radial Ambient Pulse -->
-    <circle cx="392" cy="328" r="75" fill="url(#sparkGlow)" opacity="0.85" />
+  <!-- The Intelligence Kernel (Central Forge Spark) -->
+  <g id="forge-core">
+    <!-- Wide Radial Core Aura -->
+    <circle cx="512" cy="384" r="96" fill="url(#sparkGlow)" opacity="0.9" />
 
-    <!-- Multi-Point Precision Star / Node -->
-    <!-- Core Diamond -->
-    <polygon points="392,298 406,328 392,358 378,328"
-             fill="url(#emberGrad)" filter="url(#glowFilter)" />
-    <!-- Horizontal Points -->
-    <polygon points="362,328 392,321 422,328 392,335"
-             fill="url(#emberGrad)" filter="url(#glowFilter)" />
+    <!-- Faceted 8-Point Diamond Spark -->
+    <!-- Primary Vertical Diamond -->
+    <polygon points="512,344 528,384 512,424 496,384"
+             fill="url(#moltenEmber)" filter="url(#bloomFilter)" />
+    <!-- Primary Horizontal Diamond -->
+    <polygon points="472,384 512,374 552,384 512,394"
+             fill="url(#moltenEmber)" filter="url(#bloomFilter)" />
+    <!-- Diagonal Ray 1 -->
+    <polygon points="484,356 512,380 540,412 512,388"
+             fill="#fef08a" opacity="0.8" />
+    <!-- Diagonal Ray 2 -->
+    <polygon points="540,356 512,388 484,412 512,380"
+             fill="#fef08a" opacity="0.8" />
 
-    <!-- Center White Hot Node -->
-    <circle cx="392" cy="328" r="5" fill="#ffffff" />
+    <!-- Brilliant White Core Singularity -->
+    <circle cx="512" cy="384" r="6" fill="#ffffff" />
   </g>
 
-  <!-- Terminal Code Accent (< / > Angle Brackets in Base) -->
-  <g id="code-accents" stroke="#38bdf8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.85">
-    <!-- Left Bracket < -->
-    <polyline points="335,405 322,414 335,423" />
-    <!-- Slash / -->
-    <line x1="384" y1="424" x2="400" y2="404" />
-    <!-- Right Bracket > -->
-    <polyline points="449,405 462,414 449,423" />
+  <!-- Integrated Terminal Prompt & Code Brackets in Pedestal -->
+  <g id="code-signature" stroke="#38bdf8" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Left Angle Chevron < -->
+    <polyline points="432,464 416,476 432,488" opacity="0.9" />
+    <!-- Terminal CLI Slash / -->
+    <line x1="488" y1="490" x2="508" y2="462" opacity="0.8" stroke="#94a3b8" />
+    <!-- Terminal Prompt Underscore Cursor _ -->
+    <line x1="516" y1="490" x2="536" y2="490" opacity="1" stroke="#38bdf8" />
+    <!-- Right Angle Chevron > -->
+    <polyline points="592,464 608,476 592,488" opacity="0.9" />
   </g>
 
-  <!-- Typography: SKILLFORGE -->
-  <g id="logotype" text-anchor="middle">
-    <!-- Main Title -->
-    <text x="400" y="650" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif"
-          font-size="46" font-weight="800" letter-spacing="8" fill="#f8fafc">
+  <!-- Brand Typography: Modern Geometric Wordmark -->
+  <g id="brand-typography" text-anchor="middle">
+    <!-- Main Logotype: SKILLFORGE -->
+    <text x="512" y="810"
+          font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif"
+          font-size="62" font-weight="900" letter-spacing="10" fill="#f8fafc">
       SKILL<tspan fill="#38bdf8">FORGE</tspan>
     </text>
 
-    <!-- Subtitle Tagline -->
-    <text x="400" y="688" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif"
-          font-size="13" font-weight="600" letter-spacing="4" fill="#94a3b8" opacity="0.9">
-      UNIVERSAL AGENT SKILL RUNTIME
+    <!-- Subtitle Category Tagline -->
+    <text x="512" y="856"
+          font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', monospace"
+          font-size="14" font-weight="600" letter-spacing="6" fill="#94a3b8" opacity="0.9">
+      PACKAGE MANAGER • SECURITY AUDITOR • TOKEN PROFILER
+    </text>
+
+    <!-- Version & Open Spec Metadata Indicator -->
+    <text x="512" y="890"
+          font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', monospace"
+          font-size="11" font-weight="500" letter-spacing="3" fill="#38bdf8" opacity="0.75">
+      UNIVERSAL RUNTIME FOR AGENT SKILLS (SKILL.MD)
     </text>
   </g>
 </svg>
