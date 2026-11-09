@@ -24,10 +24,13 @@ Common attack vectors in community-shared skills include:
 | **`SEC-005`** | **HIGH** | Exfiltration Endpoints | Detects outbound data transmission to webhook or request-capture domains (`webhook.site`, `pipedream.net`, `requestbin.net`). |
 | **`SEC-006`** | **CRITICAL / HIGH** | Hardcoded Secrets | Detects hardcoded API keys and provider tokens (`ghp_`, `github_pat_`, `sk-ant-`, `AIzaSy`, `AKIA`). |
 | **`SEC-007`** | **HIGH** | Markdown Link Spoofing | Detects deceptive links where the visible URL host differs from the target destination host. |
-| **`SEC-008`** | **CRITICAL / HIGH** | Python AST & Taint Analysis | Inspects bundled `.py` scripts via Python AST for `eval()`, `exec()`, `subprocess(..., shell=True)`, unsafe deserialization, and environment-to-network taint flows. |
+| **`SEC-008`** | **CRITICAL / HIGH** | Python AST, Taint & Sandbox | Inspects bundled `.py` scripts via Python AST for `eval()`, `exec()`, `subprocess(..., shell=True)`, unsafe deserialization, environment-to-network taint flows, and runtime sandbox policy violations (`--sandbox`). |
 | **`SEC-009`** | **MEDIUM** | Unrestricted Tool Scope | Flags wildcard tool permissions (`*`, `Bash(*)`) in `allowed-tools` YAML frontmatter. |
 | **`SEC-010`** | **HIGH** | Deceptive Installer Pattern | Flags prose instructions guiding users or agents to execute piped shell installers (`curl ... \| bash`, `irm ... \| iex`). |
 | **`SEC-011`** | **HIGH / MEDIUM** | Executable Payload in Assets | Flags native executables (ELF, Mach-O, PE headers) as HIGH and script or binary file types (`.sh`, `.ps1`, `.bat`, `.exe`, `.dll`, `.so`, `.jar`, ...) under `assets/` as MEDIUM. Runnable code belongs in `scripts/`, where it gets audited as code. Text assets are also scanned for prompt injection and hidden unicode. |
+| **`SEC-012`** | **HIGH** | Allowed-Tools Scope Violation | Flags shell execution blocks or bundled scripts when frontmatter `allowed-tools` excludes command execution. |
+| **`SEC-013`** | **HIGH** | Memory & Hook Poisoning | Detects shell redirection or append operations (`>>`, `>`, `tee -a`) targeting `CLAUDE.md`, `AGENTS.md`, `MEMORY.md`, `.cursorrules`, `.windsurfrules`, or `.git/hooks/*` (OWASP ASI06). |
+| **`SEC-014`** | **CRITICAL** | Lethal Trifecta Compound Risk | Flags skills combining private credential/env access, untrusted external content ingestion, and outbound network egress (OWASP AST10). |
 | **`QUAL-001`** | **LOW** | Trigger Quality | Verifies whether the skill description includes explicit activation triggers (`when`, `use when`, `for`) necessary for token-efficient progressive disclosure. |
 | **`QUAL-002`** | **MEDIUM** | Spec Compliance | Ensures directory name matches the `name` field in YAML frontmatter and validates identifier safety. |
 | **`QUAL-003`** | **LOW** | Context Budget Limit | Flags `SKILL.md` bodies exceeding 500 lines or ~5,000 tokens so reference docs are extracted into `references/`. |
@@ -50,6 +53,12 @@ skillforge audit ./skills/my-skill
 Fail the command with exit code `1` if any warning or low-severity finding is detected:
 ```bash
 skillforge audit ./skills/my-skill --strict
+```
+
+### Offline Sandbox Execution
+Execute bundled Python scripts in an isolated subprocess to verify runtime network and process boundaries:
+```bash
+skillforge audit ./skills/my-skill --sandbox
 ```
 
 ### Machine-Readable JSON

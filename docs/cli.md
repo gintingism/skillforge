@@ -50,6 +50,8 @@ Scan a skill file or directory for prompt injections, zero-width unicode, danger
 ```bash
 skillforge audit ./skills/my-skill
 skillforge audit ./skills/my-skill --strict
+skillforge audit ./skills/my-skill --sandbox
+skillforge audit ./skills/my-skill --sarif findings.sarif
 skillforge audit ./skills/my-skill --json
 ```
 
