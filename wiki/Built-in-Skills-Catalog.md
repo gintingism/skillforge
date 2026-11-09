@@ -1,6 +1,6 @@
 # Built-in Skills Catalog
 
-SkillForge includes 32 production-grade engineering skills designed to resolve common agent failure modes identified in autonomous coding benchmarks.
+SkillForge includes 34 production-grade engineering skills designed to resolve common agent failure modes identified in autonomous coding benchmarks.
 
 All built-in skills comply with the Progressive Disclosure Standard (`QUAL-003`), carry zero AI filler, and pass full static security audits (`100/100`).
 
@@ -22,12 +22,14 @@ skillforge install systematic-debugging --global
 
 ---
 
-## Category 1: Code Quality, Security & Performance (16 Skills)
+## Category 1: Code Quality, Security & Performance (18 Skills)
 
 | Skill Name | Purpose & Primary Triggers | References & Assets |
 | :--- | :--- | :--- |
 | `supply-chain-sentinel` | Inspects package registries, verify release age, and run CVE audits (`pip-audit`, `npm audit`) before adding dependencies. | `references/registry-heuristics.md` |
 | `secret-sanitizer` | Pre-commit git diff auditor that prevents API keys, private tokens, and credentials from leaking into commits. | Built-in regex engine |
+| `lethal-trifecta-guard` | Enforces isolation boundaries against the Lethal Trifecta (OWASP AST10) by separating private credential access, untrusted content ingestion, and external network egress. | `references/isolation-boundaries.md` |
+| `memory-hygiene-sentinel` | Protects persistent agent instruction files (`CLAUDE.md`, `AGENTS.md`, `MEMORY.md`, `.cursorrules`) and git hooks against cross-session memory poisoning (OWASP ASI06). | `references/memory-audit-checklist.md` |
 | `contract-test-generator` | Authors property-based invariant tests and contract fuzz tests using Hypothesis and fast-check. | `references/contract-patterns.md` |
 | `blast-radius-containment` | Traces upstream references and enforces a strict file touch budget before modifying shared libraries or core APIs. | `references/radius-checklist.md` |
 | `security-threat-modeler` | Maps trust boundaries, checks IDOR/BOLA authorization, validates SSRF risks, and audits injection sinks. | `references/owasp-top-10.md` |

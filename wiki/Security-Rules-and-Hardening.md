@@ -4,7 +4,7 @@ This document provides the full specification for SkillForge's security and qual
 
 ---
 
-## Security Rules Matrix (SEC-001 to SEC-011)
+## Security Rules Matrix (SEC-001 to SEC-014)
 
 | Rule ID | Name | Severity | Attack Vector Addressed |
 | :--- | :--- | :--- | :--- |
@@ -15,11 +15,13 @@ This document provides the full specification for SkillForge's security and qual
 | **SEC-005** | Exfiltration Endpoints | HIGH | Outbound data dispatch to public request catcher services (`webhook.site`, `pipedream.net`, `requestbin.net`) or environment token exfiltration. |
 | **SEC-006** | Hardcoded Secrets | HIGH | Leaked API keys and platform tokens (`ghp_`, `github_pat_`, `sk-ant-`, `AIzaSy`, `AKIA`). |
 | **SEC-007** | Markdown Link Spoofing | MEDIUM | Link descriptions displaying a trusted domain while the target URL points to a different deceptive destination. |
-| **SEC-008** | Python AST & Taint Flow | HIGH | Python scripts invoking dynamic code evaluation (`eval`, `exec`), shell executions (`subprocess(..., shell=True)`), or flowing environment secrets into HTTP sinks. |
+| **SEC-008** | Python AST, Taint Flow & Offline Sandbox | CRITICAL / HIGH | Python scripts invoking dynamic code evaluation (`eval`, `exec`), shell executions (`subprocess(..., shell=True)`), flowing environment secrets into HTTP sinks, or triggering network/process blocks inside `skillforge audit --sandbox`. |
 | **SEC-009** | Unrestricted Tool Scope | MEDIUM | Wildcard permissions (`*`, `Bash(*)`, `Write(*)`) declared in `allowed-tools` frontmatter. |
 | **SEC-010** | Deceptive Installer Pattern | HIGH | Scripts masquerading as standard installers while downloading unverified secondary payloads in the background. |
 | **SEC-011** | Executable in Assets | HIGH | Executable binaries (`.exe`, `.bin`, `.so`, `.dylib`) concealed inside static documentation or image asset folders. |
 | **SEC-012** | Allowed-Tools Scope Violation | HIGH | Shell commands or execution scripts in skill body when frontmatter `allowed-tools` excludes shell execution. |
+| **SEC-013** | Persistent Memory & Git Hook Poisoning | HIGH | Shell redirection or append operations (`>>`, `>`, `tee -a`) targeting persistent agent memory files (`CLAUDE.md`, `AGENTS.md`, `MEMORY.md`, `.cursorrules`, `.windsurfrules`) or `.git/hooks/*` (OWASP ASI06). |
+| **SEC-014** | Lethal Trifecta Compound Risk | CRITICAL | Skills combining private credential/env access, untrusted external content ingestion, and outbound network egress in the same package (OWASP AST10). |
 
 ---
 

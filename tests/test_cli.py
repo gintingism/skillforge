@@ -281,3 +281,26 @@ def test_cli_lint_context_command(tmp_path: Path) -> None:
     assert bloated_data["passed"] is False
     assert any(f["rule_id"] == "CTX-001" for f in bloated_data["findings"])
 
+
+def test_cli_audit_sandbox_flag(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "cli-sbx-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: cli-sbx-skill\ndescription: Use when testing CLI sandbox option\n---\n\n"
+        "# CLI Sandbox\nExecute `scripts/net.py`.\n",
+        encoding="utf-8",
+    )
+    scripts = skill_dir / "scripts"
+    scripts.mkdir()
+    (scripts / "net.py").write_text(
+        "import importlib\n"
+        "importlib.import_module('soc' + 'ket').socket()\n",
+        encoding="utf-8",
+    )
+    res = runner.invoke(app, ["audit", str(skill_dir), "--sandbox", "--json"])
+    assert res.exit_code == 1
+    payload = json.loads(res.stdout)
+    assert payload["passed"] is False
+    assert any("Runtime sandbox violation" in f["message"] for f in payload["findings"])
+
+

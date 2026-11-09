@@ -43,11 +43,12 @@ timeline
 
 ## Future Roadmap
 
-### v0.3.0 (Planned: Dynamic Sandboxing & Registry Crawler)
-- [ ] **Offline Execution Sandbox Harness:** Local containerized runner (via Docker or microVM) to execute `scripts/*.py` in an isolated network environment during `skillforge audit --sandbox`.
+### v0.3.0 (In Progress: Dynamic Sandboxing & Agentic Security)
+- [x] **Offline Execution Sandbox Harness:** Isolated Python subprocess runner (`skillforge audit --sandbox`) blocking outbound sockets and subprocess calls while monitoring canary environment secrets.
+- [x] **Granular Allowed-Tools Enforcer (`SEC-012`):** Static verification that shell snippets and bundled scripts adhere to the tools declared in `allowed-tools`.
+- [x] **OWASP 2026 Agentic Defenses (`SEC-013` & `SEC-014`):** Persistent memory/git hook poisoning detection and Lethal Trifecta compound risk analysis.
 - [ ] **Skill Registry Indexer:** CLI crawler to scan public GitHub repositories for `SKILL.md` packages and verify them against SkillForge security policies.
 - [ ] **Interactive TUI Dashboard:** Rich terminal user interface using Textual for live token browsing, skill activation testing, and visual diffing.
-- [ ] **Granular Allowed-Tools Enforcer:** Static verification that shell snippets inside `SKILL.md` strictly adhere to the tools declared in `allowed-tools`.
 
 ### v1.0.0 (Long-Term: Universal Skill Ecosystem)
 - [ ] **Cross-Agent Semantic Evaluation Benchmark:** Automated benchmark measuring trigger precision, recall, and false positive rates across diverse LLM foundation models (Claude 3.7 Sonnet, Gemini 2.5 Flash, GPT-4.5).

@@ -64,12 +64,13 @@ def validate(
 def audit(
     path: Path,
     strict: bool = typer.Option(False, "--strict", help="Fail on any warning or low-severity finding."),
+    sandbox: bool = typer.Option(False, "--sandbox", help="Execute bundled Python scripts inside an isolated offline sandbox harness."),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
     sarif_output: Path | None = typer.Option(None, "--sarif", help="Emit OASIS SARIF v2.1.0 report for GitHub Code Scanning."),
 ) -> None:
     """Audit a skill for prompt injection, zero-width unicode, and security issues."""
     try:
-        report = audit_path(path)
+        report = audit_path(path, sandbox=sandbox)
     except (SkillForgeError, OSError) as exc:
         if json_output:
             typer.echo(json.dumps({"passed": False, "error": str(exc)}))

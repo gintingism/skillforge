@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import ast
+import os
 import re
+import subprocess
+import sys
+import tempfile
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -125,6 +129,8 @@ class AuditReport:
             "SEC-010": ("Markdown-as-Installer Deceptive Instruction", "Detects instructions prompting the user or agent to execute unverified install scripts or remote terminal pipelines."),
             "SEC-011": ("Executable Payload in Assets", "Detects native executables or script file types stored under assets/ instead of scripts/."),
             "SEC-012": ("Allowed-Tools Scope Violation", "Detects shell commands or execution scripts in skill body when allowed-tools excludes shell execution or restricts tools."),
+            "SEC-013": ("Persistent Memory & Git Hook Poisoning", "Detects shell redirection or append operations targeting persistent agent memory files or git hooks."),
+            "SEC-014": ("Lethal Trifecta Compound Risk", "Detects skills combining private credential access, untrusted external ingestion, and outbound network egress."),
             "QUAL-008": ("Metadata Value Types", "Checks that metadata maps string keys to string values as the agentskills.io spec requires."),
             "QUAL-001": ("Trigger Quality", "Checks whether skill descriptions include explicit activation conditions."),
             "QUAL-002": ("Directory Alignment", "Checks whether directory name matches frontmatter name."),
@@ -311,6 +317,20 @@ _MARKDOWN_INSTALLER_PATTERNS: list[re.Pattern[str]] = [
         r"(?i)\b(?:irm|iwr|invoke-restmethod|invoke-webrequest)\b[^\n`]*\|\s*(?:iex|invoke-expression)\b"
     ),
 ]
+_MEMORY_POISONING_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(
+        r"(?i)(?:>>|>|\|\s*tee(?:\s+-a)?)\s*[\"']?(?:~\/|\$HOME\/|\.\.?\/)*(?:CLAUDE\.md|AGENTS\.md|MEMORY\.md|\.cursorrules|\.windsurfrules|\.clinerules|\.github\/copilot-instructions\.md|\.bashrc|\.zshrc|\.profile|\.git\/hooks\/[a-z0-9_-]+)\b"
+    ),
+]
+_TRIFECTA_PRIVATE_DATA = re.compile(
+    r"(?i)(?:\.ssh/id_|\.aws/credentials|\.config/gcloud|\bos\.environ\b|\bos\.getenv\s*\(|\bprocess\.env\b|\$(?:AWS_SECRET|OPENAI_API_KEY|ANTHROPIC_API_KEY|GITHUB_TOKEN|SECRET_KEY|DATABASE_URL)\b|\bcat\s+[^\n`]*\.env\b)"
+)
+_TRIFECTA_UNTRUSTED_INGEST = re.compile(
+    r"(?i)(?:\b(?:curl|wget)\b[^\n`]*https?://|\b(?:requests|httpx)\.(?:get|request)\s*\(|\burllib\.request\.urlopen\s*\()"
+)
+_TRIFECTA_EXTERNAL_EGRESS = re.compile(
+    r"(?i)(?:\b(?:curl|wget)\b[^\n`]*(?:-X\s*POST|--data|-d\s+|--post-data|-F\s+)|\b(?:requests|httpx)\.(?:post|put)\s*\(|\burllib\.request\.Request\s*\([^\n`]*data=|\b(?:webhook\.site|pipedream\.net|requestbin\.net|burpcollaborator\.net)\b)"
+)
 _EXECUTABLE_MAGIC = (b"\x7fELF", b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf", b"\xce\xfa\xed\xfe", b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe")
 _EXECUTABLE_ASSET_SUFFIXES = (".exe", ".dll", ".so", ".dylib", ".jar", ".sh", ".bat", ".cmd", ".ps1", ".scr", ".msi")
 _SPEC_NAME_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
@@ -478,7 +498,13 @@ class SkillAuditor:
         findings.extend(self._scan_text(text, file_label))
         return findings
 
-    def audit_package(self, package: SkillPackage, *, check_resources: bool = True) -> AuditReport:
+    def audit_package(
+        self,
+        package: SkillPackage,
+        *,
+        check_resources: bool = True,
+        sandbox: bool = False,
+    ) -> AuditReport:
         """Audit an entire skill package."""
         target_name = package.skill.name or (package.source_dir.name if package.source_dir else "unknown")
         findings: list[AuditFinding] = []
@@ -617,14 +643,21 @@ class SkillAuditor:
             script_file = f"scripts/{rel_path}"
             findings.extend(self._scan_text(content, script_file))
             findings.extend(self._scan_shell_content(content, script_file))
-            if rel_path.endswith(".py") or content.startswith("#!") and "python" in content.splitlines()[0]:
+            is_python = rel_path.endswith(".py") or (
+                content.startswith("#!") and "python" in content.splitlines()[0]
+            )
+            if is_python:
                 findings.extend(self._scan_python_ast(content, script_file))
+                if sandbox:
+                    findings.extend(self._run_script_sandbox(script_file, content))
 
         for rel_path, content in package.references.items():
             findings.extend(self._scan_text(content, f"references/{rel_path}"))
 
         for rel_path, data in package.assets.items():
             findings.extend(self._scan_asset(rel_path, data))
+
+        findings.extend(self._check_lethal_trifecta(package))
 
         bad_metadata = [
             f"{key!r}: {value!r}"
@@ -662,6 +695,131 @@ class SkillAuditor:
         scanner = _PythonASTScanner(filename, content.splitlines())
         scanner.visit(tree)
         return scanner.finalize()
+
+    def _check_lethal_trifecta(self, package: SkillPackage) -> list[AuditFinding]:
+        """Detect OWASP AST10 Lethal Trifecta compound risk across package instructions and scripts."""
+        has_private = False
+        has_ingest = False
+        has_egress = False
+        egress_snippet: str | None = None
+
+        sources: list[str] = [package.skill.body]
+        sources.extend(package.scripts.values())
+
+        for text in sources:
+            for line in text.splitlines():
+                if _DEFENSIVE_CONTEXT_PATTERN.search(line):
+                    continue
+                if not has_private and _TRIFECTA_PRIVATE_DATA.search(line):
+                    has_private = True
+                if not has_ingest and _TRIFECTA_UNTRUSTED_INGEST.search(line):
+                    has_ingest = True
+                if not has_egress and _TRIFECTA_EXTERNAL_EGRESS.search(line):
+                    has_egress = True
+                    egress_snippet = line.strip()[:100]
+
+        if has_private and has_ingest and has_egress:
+            return [
+                AuditFinding(
+                    rule_id="SEC-014",
+                    severity=Severity.CRITICAL,
+                    message=(
+                        "Lethal Trifecta compound risk (OWASP AST10): package combines sensitive "
+                        "credential/env access, untrusted remote content ingestion, and external network egress"
+                    ),
+                    file="SKILL.md",
+                    snippet=egress_snippet,
+                )
+            ]
+        return []
+
+    def _run_script_sandbox(self, script_file: str, content: str) -> list[AuditFinding]:
+        """Execute a bundled Python script inside an offline, network-blocked sandbox subprocess."""
+        findings: list[AuditFinding] = []
+        harness_code = (
+            "import builtins, os, runpy, socket, subprocess, sys, urllib.request\n"
+            "def _blocked_net(*a, **kw):\n"
+            "    raise RuntimeError('SANDBOX_VIOLATION: outbound network socket blocked')\n"
+            "def _blocked_proc(*a, **kw):\n"
+            "    raise RuntimeError('SANDBOX_VIOLATION: subprocess execution blocked')\n"
+            "socket.socket = _blocked_net\n"
+            "socket.create_connection = _blocked_net\n"
+            "urllib.request.urlopen = _blocked_net\n"
+            "os.system = _blocked_proc\n"
+            "os.popen = _blocked_proc\n"
+            "subprocess.Popen = _blocked_proc\n"
+            "subprocess.run = _blocked_proc\n"
+            "subprocess.call = _blocked_proc\n"
+            "subprocess.check_output = _blocked_proc\n"
+            "target = sys.argv[1]\n"
+            "sys.argv = [target]\n"
+            "try:\n"
+            "    runpy.run_path(target, run_name='__main__')\n"
+            "except SystemExit:\n"
+            "    pass\n"
+        )
+        with tempfile.TemporaryDirectory(prefix="skillforge_sbx_") as tmpdir:
+            tmp_path = Path(tmpdir)
+            target_path = tmp_path / "target_script.py"
+            runner_path = tmp_path / "sandbox_runner.py"
+            target_path.write_text(content, encoding="utf-8")
+            runner_path.write_text(harness_code, encoding="utf-8")
+
+            sanitized_env = {
+                "PATH": os.environ.get("PATH", ""),
+                "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONUTF8": "1",
+                "OPENAI_API_KEY": "sk-sandbox-canary-token",
+            }
+            try:
+                proc = subprocess.run(
+                    [sys.executable, "-I", str(runner_path), str(target_path)],
+                    cwd=tmpdir,
+                    env=sanitized_env,
+                    capture_output=True,
+                    text=True,
+                    timeout=3.0,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                findings.append(
+                    AuditFinding(
+                        rule_id="SEC-008",
+                        severity=Severity.HIGH,
+                        message="Sandbox execution timed out after 3.0s (possible infinite loop or stalling payload)",
+                        file=script_file,
+                    )
+                )
+                return findings
+            except OSError:
+                return findings
+
+            combined_out = f"{proc.stdout}\n{proc.stderr}"
+            if "SANDBOX_VIOLATION:" in combined_out:
+                reason = "unauthorized network or process call during sandbox execution"
+                for line in combined_out.splitlines():
+                    if "SANDBOX_VIOLATION:" in line:
+                        reason = line.split("SANDBOX_VIOLATION:", 1)[1].strip()
+                        break
+                findings.append(
+                    AuditFinding(
+                        rule_id="SEC-008",
+                        severity=Severity.CRITICAL,
+                        message=f"Runtime sandbox violation: {reason}",
+                        file=script_file,
+                    )
+                )
+            elif "sk-sandbox-canary-token" in combined_out:
+                findings.append(
+                    AuditFinding(
+                        rule_id="SEC-008",
+                        severity=Severity.CRITICAL,
+                        message="Runtime sandbox violation: script leaked canary environment secret to output stream",
+                        file=script_file,
+                    )
+                )
+        return findings
 
     def _check_disclosed_paths(self, package: SkillPackage) -> list[AuditFinding]:
         """Verify that files referenced via progressive disclosure exist in the package."""
@@ -727,10 +885,10 @@ class SkillAuditor:
                         )
         return findings
 
-    def audit_file_or_dir(self, path: Path) -> AuditReport:
+    def audit_file_or_dir(self, path: Path, *, sandbox: bool = False) -> AuditReport:
         """Audit a file or directory from disk."""
         package = SkillPackage.load(path)
-        return self.audit_package(package)
+        return self.audit_package(package, sandbox=sandbox)
 
     def audit_content(self, content: str, target_name: str = "document") -> AuditReport:
         """Audit raw SKILL.md content without disk operations."""
@@ -873,6 +1031,26 @@ class SkillAuditor:
                         )
                     )
 
+            # Check persistent memory & git hook poisoning patterns (SEC-013)
+            for mem_pattern in _MEMORY_POISONING_PATTERNS:
+                match_mem = mem_pattern.search(line)
+                if match_mem:
+                    quoted_defense = bool(
+                        _DEFENSIVE_CONTEXT_PATTERN.search(line) and re.search(r"[\"'`]", line)
+                    )
+                    findings.append(
+                        AuditFinding(
+                            rule_id="SEC-013",
+                            severity=Severity.MEDIUM if quoted_defense else Severity.HIGH,
+                            message=(
+                                f"Persistent agent memory or git hook modification detected: '{match_mem.group(0).strip()}'"
+                            ),
+                            file=filename,
+                            line=idx,
+                            snippet=line.strip()[:100],
+                        )
+                    )
+
         return findings
 
     def _scan_shell_content(self, text: str, filename: str) -> list[AuditFinding]:
@@ -936,23 +1114,23 @@ def _discover_collection_packages(root: Path) -> list[SkillPackage]:
     return [packages[name] for name in sorted(packages)]
 
 
-def audit_path(path: Path) -> AuditReport:
+def audit_path(path: Path, *, sandbox: bool = False) -> AuditReport:
     """Convenience helper to audit a skill file, skill package, or multi-skill directory."""
     auditor = SkillAuditor()
     if path.is_file() or (path / "SKILL.md").is_file():
-        return auditor.audit_file_or_dir(path)
+        return auditor.audit_file_or_dir(path, sandbox=sandbox)
 
     if path.is_dir():
         packages = _discover_collection_packages(path)
         if packages:
             if len(packages) == 1:
-                return auditor.audit_package(packages[0])
+                return auditor.audit_package(packages[0], sandbox=sandbox)
             combined_findings: list[AuditFinding] = []
             total_pointer = 0
             total_body = 0
             total_lines = 0
             for pkg in packages:
-                rep = auditor.audit_package(pkg)
+                rep = auditor.audit_package(pkg, sandbox=sandbox)
                 total_pointer += rep.pointer_tokens
                 total_body += rep.body_tokens
                 total_lines += rep.body_lines
@@ -976,4 +1154,4 @@ def audit_path(path: Path) -> AuditReport:
                 body_lines=total_lines,
             )
 
-    return auditor.audit_file_or_dir(path)
+    return auditor.audit_file_or_dir(path, sandbox=sandbox)

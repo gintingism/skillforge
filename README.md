@@ -54,12 +54,15 @@ As AI coding assistants adopt the open `SKILL.md` format, two practical problems
 | Capability | Manual Copy-Paste | General Skill CLIs | SkillForge |
 | :--- | :---: | :---: | :---: |
 | **Runtime** | None | Node.js / npm | **Python 3.11+ (`pip` / `uvx`)** |
-| **Offline Security Audit** | No | No | **100% Local Pattern & AST Scanner** |
+| **Offline Security Audit** | No | No | **100% Local Pattern, AST & Sandbox Scanner** |
 | **Prompt Injection Check** | No | No | **Built-in (`SEC-002`)** |
 | **Deceptive Installer Check** | No | No | **Built-in (`SEC-010`)** |
 | **Executable-in-Assets Check** | No | No | **Built-in (`SEC-011`)** |
+| **Allowed-Tools Enforcer** | No | No | **Built-in (`SEC-012`)** |
+| **Memory & Hook Poisoning** | No | No | **Built-in (`SEC-013`, OWASP ASI06)** |
+| **Lethal Trifecta Analysis** | No | No | **Built-in (`SEC-014`, OWASP AST10)** |
 | **Hidden Unicode / Bidi Scans** | No | No | **Built-in (`SEC-001`)** |
-| **Python AST & Taint Tracking** | No | No | **Built-in (`SEC-008`)** |
+| **Python AST & Sandbox Harness** | No | No | **Built-in (`SEC-008`, `audit --sandbox`)** |
 | **Link Phishing / Spoofing** | No | No | **Built-in (`SEC-007`)** |
 | **Context Token Profiler** | No | No | **Built-in (`skillforge budget`)** |
 | **Context File Linter** | No | No | **Built-in (`skillforge lint-context`)** |
@@ -102,6 +105,9 @@ Scan an individual skill, a directory of skills, or the entire repository for pr
 # Audit an individual skill
 skillforge audit ./skills/my-new-skill
 
+# Execute bundled Python scripts in an isolated offline sandbox harness
+skillforge audit ./skills/my-new-skill --sandbox
+
 # Audit an entire collection directory or project root
 skillforge audit ./skills
 skillforge audit .
@@ -121,9 +127,13 @@ The auditor checks for:
 - **Exfiltration Endpoints (SEC-005):** Outbound transmission to capture services (`webhook.site`, `pipedream.net`, `requestbin.net`) or environment variable exfiltration.
 - **Hardcoded Secrets (SEC-006):** Embedded API keys and provider tokens (`ghp_`, `github_pat_`, `sk-ant-`, `AIzaSy`, `AKIA`).
 - **Markdown Link Spoofing (SEC-007):** Mismatched visible URL hostnames and target URL destinations hiding deceptive redirects.
-- **Python AST & Taint Analysis (SEC-008):** Structural AST inspection of bundled Python scripts for `eval()`, `exec()`, `subprocess(..., shell=True)`, `pickle.loads()`, and environment-to-network taint flows.
+- **Python AST, Taint & Sandbox Analysis (SEC-008):** Structural AST inspection of bundled Python scripts for `eval()`, `exec()`, `subprocess(..., shell=True)`, `pickle.loads()`, environment-to-network taint flows, plus optional runtime isolation via `--sandbox` (blocking outbound sockets and subprocess creation while monitoring canary secrets).
 - **Unrestricted Tool Scope (SEC-009):** Wildcard tool permissions (`*`, `Bash(*)`) in `allowed-tools` frontmatter.
+- **Markdown-as-Installer Detection (SEC-010):** Deceptive copy-paste terminal pipelines (`curl | bash`, `irm | iex`) disguised as setup instructions.
+- **Executable Payload in Assets (SEC-011):** Native binaries (`PE`, `ELF`, `Mach-O`) or scripts concealed inside `assets/`.
 - **Allowed-Tools Scope Enforcer (SEC-012):** Flags shell execution blocks or bundled scripts when frontmatter `allowed-tools` excludes command execution.
+- **Persistent Memory & Git Hook Poisoning (SEC-013):** Detects shell append/redirection operations (`>>`, `>`, `tee -a`) targeting `CLAUDE.md`, `AGENTS.md`, `MEMORY.md`, `.cursorrules`, `.windsurfrules`, or `.git/hooks/*` (OWASP ASI06).
+- **Lethal Trifecta Compound Risk (SEC-014):** Flags packages combining private credential/env access, untrusted remote content ingestion, and external network egress (OWASP AST10).
 - **Trigger Quality (QUAL-001):** Ensures descriptions specify concrete activation conditions.
 - **Directory Alignment (QUAL-002):** Ensures folder name matches the frontmatter `name`.
 - **Progressive Disclosure Budget (QUAL-003):** Flags `SKILL.md` bodies exceeding 500 lines or ~5,000 tokens so secondary reference material is moved to `references/`.
@@ -149,10 +159,10 @@ skillforge budget
 skillforge budget --builtin
 ```
 ```text
-Context Budget Profile (22 skills)
-  Always-Loaded Startup Pointer Cost: ~1305 tokens
-  On-Demand SKILL.md Body Cost:       ~7483 tokens
-  Disclosed Resources Cost:           ~349 tokens
+Context Budget Profile (34 skills)
+  Always-Loaded Startup Pointer Cost: ~1680 tokens
+  On-Demand SKILL.md Body Cost:       ~11200 tokens
+  Disclosed Resources Cost:           ~4100 tokens
 ```
 
 ### 4. Test trigger accuracy with eval suites (`test`)
@@ -421,13 +431,15 @@ skillforge install systematic-debugging --global
 
 ---
 
-## Built-in Skills (32 Zero-Slop Skills)
+## Built-in Skills (34 Zero-Slop Skills)
 
-SkillForge ships with 32 practical engineering skills to address common agent failure modes identified in benchmark research:
+SkillForge ships with 34 practical engineering skills to address common agent failure modes identified in benchmark research:
 
 ### Code Quality, Security & Performance
 - `supply-chain-sentinel`: Check package existence, registry age, and run CVE audits (`pip-audit`, `npm audit`) before adding dependencies.
 - `secret-sanitizer`: Pre-commit git diff auditor that prevents API keys, private tokens, and credentials from leaking.
+- `lethal-trifecta-guard`: Isolation boundaries against the Lethal Trifecta (OWASP AST10) separating private credentials, untrusted content ingestion, and external network egress (`references/isolation-boundaries.md`).
+- `memory-hygiene-sentinel`: Cross-session memory and git hook protection for `CLAUDE.md`, `AGENTS.md`, `MEMORY.md`, `.cursorrules`, and `.git/hooks/` (OWASP ASI06, `references/memory-audit-checklist.md`).
 - `contract-test-generator`: Property-based testing and contract boundary fuzz tests (Hypothesis, fast-check) to verify invariants.
 - `blast-radius-containment`: Upstream reference tracing and a strict file touch budget before modifying shared code or public APIs.
 - `security-threat-modeler`: Trust-boundary mapping, IDOR/BOLA object-level authorization checks, SSRF validation, and injection sink verification.
@@ -467,10 +479,10 @@ SkillForge ships with 32 practical engineering skills to address common agent fa
 
 ## Static Scanner Scope & Honest Limitations
 
-SkillForge provides deterministic, 100% offline static auditing to catch dangerous instruction patterns before skills run:
+SkillForge provides deterministic, 100% offline static and sandboxed auditing to catch dangerous instruction patterns before skills run:
 
-- **What SkillForge Catches:** Malicious shell pipelines (`curl | bash`, `irm | iex`), reverse shells, unauthorized file reads (`~/.ssh`, `~/.aws`), Python AST taint flows (environment tokens passing into network requests), zero-width unicode obfuscation, deceptive link targets, executables hidden in `assets/`, and context-window token bloat. A small regression corpus in `tests/test_corpus.py` guards these patterns; it is not a measurement of real-world detection rates.
-- **What Requires Human Review & Sandboxes:** Pure natural-language policy evasion (instructions that subtly coax models into biased or non-compliant decisions without executable code or known jailbreak keywords) cannot be reliably detected by regex or AST analysis alone. We recommend combining SkillForge static audits with runtime OS sandboxing and requiring human confirmation for irreversible external actions.
+- **What SkillForge Catches:** Malicious shell pipelines (`curl | bash`, `irm | iex`), reverse shells, unauthorized file reads (`~/.ssh`, `~/.aws`), persistent memory and git hook poisoning (`SEC-013`), Lethal Trifecta compound exfiltration chains (`SEC-014`), Python AST taint flows and runtime sandbox network/process violations (`SEC-008` / `--sandbox`), zero-width unicode obfuscation, deceptive link targets, executables hidden in `assets/`, and context-window token bloat. A small regression corpus in `tests/test_corpus.py` guards these patterns; it is not a measurement of real-world detection rates.
+- **What Requires Human Review & Sandboxes:** Pure natural-language policy evasion (instructions that subtly coax models into biased or non-compliant decisions without executable code or known jailbreak keywords) cannot be reliably detected by regex or AST analysis alone. We recommend combining SkillForge audits with runtime OS sandboxing and requiring human confirmation for irreversible external actions.
 
 ---
 
