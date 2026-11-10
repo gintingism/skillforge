@@ -1,6 +1,6 @@
 # Built-in Skills Catalog
 
-SkillForge includes 34 production-grade engineering skills designed to resolve common agent failure modes identified in autonomous coding benchmarks.
+SkillForge includes 37 production-grade engineering skills designed to resolve common agent failure modes identified in autonomous coding benchmarks.
 
 All built-in skills comply with the Progressive Disclosure Standard (`QUAL-003`), carry zero AI filler, and pass full static security audits (`100/100`).
 
@@ -22,11 +22,12 @@ skillforge install systematic-debugging --global
 
 ---
 
-## Category 1: Code Quality, Security & Performance (18 Skills)
+## Category 1: Code Quality, Security & Performance (19 Skills)
 
 | Skill Name | Purpose & Primary Triggers | References & Assets |
 | :--- | :--- | :--- |
 | `supply-chain-sentinel` | Inspects package registries, verify release age, and run CVE audits (`pip-audit`, `npm audit`) before adding dependencies. | `references/registry-heuristics.md` |
+| `supply-chain-lockfile-guard` | Verifies lockfile cryptographic integrity, flags unpinned package installs, and audits post-install lifecycle scripts. | `references/lockfile-audit-checklist.md` |
 | `secret-sanitizer` | Pre-commit git diff auditor that prevents API keys, private tokens, and credentials from leaking into commits. | Built-in regex engine |
 | `lethal-trifecta-guard` | Enforces isolation boundaries against the Lethal Trifecta (OWASP AST10) by separating private credential access, untrusted content ingestion, and external network egress. | `references/isolation-boundaries.md` |
 | `memory-hygiene-sentinel` | Protects persistent agent instruction files (`CLAUDE.md`, `AGENTS.md`, `MEMORY.md`, `.cursorrules`) and git hooks against cross-session memory poisoning (OWASP ASI06). | `references/memory-audit-checklist.md` |
@@ -61,10 +62,12 @@ skillforge install systematic-debugging --global
 
 ---
 
-## Category 3: Context Efficiency & Multi-Agent Operations (9 Skills)
+## Category 3: Context Efficiency & Multi-Agent Operations (11 Skills)
 
 | Skill Name | Purpose & Primary Triggers | References & Assets |
 | :--- | :--- | :--- |
+| `mcp-least-privilege-sentinel` | Enforces least-privilege boundaries, read-write tool segregation, and scoped filesystem permissions for MCP tools. | `references/mcp-permission-matrix.md` |
+| `attention-anchor-ledger` | Maintains a compact state anchor to prevent model attention degradation in long-context threads (100k+ tokens). | `references/state-anchor-schema.md` |
 | `skill-architect` | Multi-file progressive disclosure guide for authoring low-token `SKILL.md`, `AGENTS.md`, and `CLAUDE.md` files. | `references/progressive-disclosure.md` |
 | `caveman` | Terse technical communication mode that eliminates fluff while preserving exact paths, commands, and raw errors. | Built-in voice rules |
 | `context-compactor` | Structured state distillation and active hypothesis ledgers for long-running agent threads nearing context limits. | `references/compaction-schema.md` |

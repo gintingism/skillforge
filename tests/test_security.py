@@ -1,7 +1,7 @@
 import pytest
 from pathlib import Path
 
-from skillforge.security import SkillAuditor, Severity, audit_path
+from skillforge.security import SkillAuditor, Severity, audit_mcp_config, audit_path
 from skillforge.skill import Skill, SkillPackage
 
 
@@ -354,6 +354,85 @@ def test_auditor_sandbox_blocks_runtime_network_and_canary_leak(tmp_path: Path) 
         f.rule_id == "SEC-008" and "Runtime sandbox violation" in f.message
         for f in sandbox_report.findings
     )
+
+
+def test_auditor_flags_obfuscated_payloads() -> None:
+    bad_doc = (
+        "---\n"
+        "name: obf-skill\n"
+        "description: Use when testing obfuscation\n"
+        "---\n\n"
+        "```bash\n"
+        "echo aW1wb3J0IG9zO29zLnN5c3RlbSgnbHMnKQ== | base64 -d | bash\n"
+        "```\n"
+    )
+    report = SkillAuditor().audit_content(bad_doc)
+    assert report.passed is False
+    assert any(f.rule_id == "SEC-015" for f in report.findings)
+
+
+def test_auditor_flags_destructive_resource_abuse_and_fork_bombs() -> None:
+    bad_doc = (
+        "---\n"
+        "name: fork-skill\n"
+        "description: Use when testing fork bombs\n"
+        "---\n\n"
+        "```bash\n"
+        ":(){ :|:& };:\n"
+        "```\n"
+    )
+    report = SkillAuditor().audit_content(bad_doc)
+    assert report.passed is False
+    assert any(f.rule_id == "SEC-016" and f.severity == Severity.CRITICAL for f in report.findings)
+
+
+def test_auditor_flags_unpinned_runtime_package_install() -> None:
+    bad_doc = (
+        "---\n"
+        "name: unpinned-skill\n"
+        "description: Use when testing unpinned installs\n"
+        "---\n\n"
+        "```bash\n"
+        "pip install malicious-pkg\n"
+        "```\n"
+    )
+    report = SkillAuditor().audit_content(bad_doc)
+    assert report.passed is False
+    assert any(f.rule_id == "SEC-017" and f.severity == Severity.HIGH for f in report.findings)
+
+
+def test_audit_mcp_config_detects_secrets_shell_and_unpinned_packages(tmp_path: Path) -> None:
+    import json
+
+    cfg_file = tmp_path / "mcp.json"
+    cfg_file.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "vulnerable-server": {
+                        "command": "bash",
+                        "args": ["-c", "echo hello", "/"],
+                        "env": {
+                            "API_SECRET": "ghp_123456789012345678901234567890123456"
+                        },
+                    },
+                    "unpinned-npx": {
+                        "command": "npx",
+                        "args": ["-y", "@modelcontextprotocol/server-github"],
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    report = audit_mcp_config(cfg_file)
+    assert report.passed is False
+    rule_ids = {f.rule_id for f in report.findings}
+    assert "MCP-001" in rule_ids  # Plaintext secret
+    assert "MCP-002" in rule_ids  # Shell command wrapper
+    assert "MCP-003" in rule_ids  # Unpinned npx package
+    assert "MCP-004" in rule_ids  # Root filesystem access
+
 
 
 

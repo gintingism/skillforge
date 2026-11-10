@@ -131,6 +131,13 @@ class AuditReport:
             "SEC-012": ("Allowed-Tools Scope Violation", "Detects shell commands or execution scripts in skill body when allowed-tools excludes shell execution or restricts tools."),
             "SEC-013": ("Persistent Memory & Git Hook Poisoning", "Detects shell redirection or append operations targeting persistent agent memory files or git hooks."),
             "SEC-014": ("Lethal Trifecta Compound Risk", "Detects skills combining private credential access, untrusted external ingestion, and outbound network egress."),
+            "SEC-015": ("Obfuscated Payloads & Encoded Command Execution", "Detects base64 pipelines, hex-escapes, or obfuscated decoder execution wrappers (Cisco obfuscation)."),
+            "SEC-016": ("Destructive Resource Abuse & Fork Bombs", "Detects fork bombs, disk exhaustion, or destructive block device formatting (Cisco resource_abuse)."),
+            "SEC-017": ("Unpinned Runtime Dependency Injection", "Detects unpinned package installations from public registries without cryptographic hash or version locks (Cisco supply_chain)."),
+            "MCP-001": ("Plaintext Secret in MCP Environment", "Detects embedded API keys or high-entropy credentials inside MCP server env configuration."),
+            "MCP-002": ("Shell Wrapper in MCP Command", "Detects arbitrary shell execution wrappers (bash, sh, powershell) in MCP server command fields."),
+            "MCP-003": ("Unpinned Package in MCP Invocation", "Detects unpinned npx or uvx server launches without exact version tags in MCP args."),
+            "MCP-004": ("Overbroad Filesystem Root Scope", "Detects whole-filesystem or user-root directory access grants in MCP server arguments."),
             "QUAL-008": ("Metadata Value Types", "Checks that metadata maps string keys to string values as the agentskills.io spec requires."),
             "QUAL-001": ("Trigger Quality", "Checks whether skill descriptions include explicit activation conditions."),
             "QUAL-002": ("Directory Alignment", "Checks whether directory name matches frontmatter name."),
@@ -331,6 +338,73 @@ _TRIFECTA_UNTRUSTED_INGEST = re.compile(
 _TRIFECTA_EXTERNAL_EGRESS = re.compile(
     r"(?i)(?:\b(?:curl|wget)\b[^\n`]*(?:-X\s*POST|--data|-d\s+|--post-data|-F\s+)|\b(?:requests|httpx)\.(?:post|put)\s*\(|\burllib\.request\.Request\s*\([^\n`]*data=|\b(?:webhook\.site|pipedream\.net|requestbin\.net|burpcollaborator\.net)\b)"
 )
+_OBFUSCATION_PATTERNS: list[tuple[str, re.Pattern[str], Severity]] = [
+    (
+        "SEC-015",
+        re.compile(
+            r"(?i)\b(?:echo\s+[A-Za-z0-9+/=]{20,}\s*\|\s*base64\s+(-d|--decode)\s*\|\s*(?:bash|sh|zsh|powershell|pwsh)|base64\s+(-d|--decode)\s*\|\s*(?:bash|sh|zsh|powershell|pwsh|eval))"
+        ),
+        Severity.CRITICAL,
+    ),
+    (
+        "SEC-015",
+        re.compile(
+            r"(?i)\bpython(?:3)?\s+-c\s+[\"'].*?(?:b64decode|decode\(['\"]base64['\"]\)).*?exec\s*\("
+        ),
+        Severity.CRITICAL,
+    ),
+    (
+        "SEC-015",
+        re.compile(
+            r"(?i)\bpowershell\b.*?(?:-enc|-encodedcommand)\s+[A-Za-z0-9+/=]{20,}"
+        ),
+        Severity.HIGH,
+    ),
+    (
+        "SEC-015",
+        re.compile(r"(?i)(?:\\x[0-9a-fA-F]{2}){8,}"),
+        Severity.HIGH,
+    ),
+    (
+        "SEC-015",
+        re.compile(r"(?i)\b(?:xxd\s+-r\b.*\|\s*(?:bash|sh|zsh|eval))"),
+        Severity.HIGH,
+    ),
+]
+
+_RESOURCE_ABUSE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    (
+        "SEC-016",
+        re.compile(r"(?::\(\)\s*\{\s*:\|:&\s*\};:|:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\};:|\$0\s*\|\s*\$0\s*&)"),
+    ),
+    (
+        "SEC-016",
+        re.compile(r"(?i)\b(?:dd\s+if=/dev/(?:urandom|zero)\s+of=(?:/dev/|[^\s]+)|cat\s+/dev/zero\s*>\s*[^\s]+)"),
+    ),
+    (
+        "SEC-016",
+        re.compile(r"(?i)\b(?:mkfs(?:\.[a-z0-9]+)?\s+/dev/|fdisk\s+/dev/sd)"),
+    ),
+    (
+        "SEC-016",
+        re.compile(r"(?i)>\s*/dev/sd[a-z][0-9]*\b"),
+    ),
+]
+
+_UNPINNED_INSTALL_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    (
+        "SEC-017",
+        re.compile(
+            r"(?i)\b(?:pip|pip3|uv\s+pip)\s+install\s+(?!-[rRe]\b|--requirement\b|--editable\b)(?:--user\s+|--upgrade\s+|-U\s+|--quiet\s+|-q\s+)*([a-zA-Z0-9_-]{2,})\s*(?:$|[;&|])"
+        ),
+    ),
+    (
+        "SEC-017",
+        re.compile(
+            r"(?i)\bnpm\s+(?:i|install|add)\s+(?:-g\s+|--global\s+)?([a-zA-Z0-9_-]{2,})\s*(?:$|[;&|])"
+        ),
+    ),
+]
 _EXECUTABLE_MAGIC = (b"\x7fELF", b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf", b"\xce\xfa\xed\xfe", b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe")
 _EXECUTABLE_ASSET_SUFFIXES = (".exe", ".dll", ".so", ".dylib", ".jar", ".sh", ".bat", ".cmd", ".ps1", ".scr", ".msi")
 _SPEC_NAME_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
@@ -1051,6 +1125,60 @@ class SkillAuditor:
                         )
                     )
 
+            # Check obfuscated payloads & encoded command execution (SEC-015)
+            for rule_id, pattern, severity in _OBFUSCATION_PATTERNS:
+                match_obf = pattern.search(line)
+                if match_obf:
+                    quoted_defense = bool(
+                        _DEFENSIVE_CONTEXT_PATTERN.search(line) and re.search(r"[\"'`]", line)
+                    )
+                    findings.append(
+                        AuditFinding(
+                            rule_id=rule_id,
+                            severity=Severity.MEDIUM if quoted_defense else severity,
+                            message=f"Obfuscated payload or encoded execution wrapper detected: '{match_obf.group(0)[:60]}'",
+                            file=filename,
+                            line=idx,
+                            snippet=line.strip()[:100],
+                        )
+                    )
+
+            # Check destructive resource abuse & fork bombs (SEC-016)
+            for rule_id, pattern in _RESOURCE_ABUSE_PATTERNS:
+                match_res = pattern.search(line)
+                if match_res:
+                    quoted_defense = bool(
+                        _DEFENSIVE_CONTEXT_PATTERN.search(line) and re.search(r"[\"'`]", line)
+                    )
+                    findings.append(
+                        AuditFinding(
+                            rule_id=rule_id,
+                            severity=Severity.MEDIUM if quoted_defense else Severity.CRITICAL,
+                            message=f"Destructive resource abuse or fork bomb pattern detected: '{match_res.group(0)[:60]}'",
+                            file=filename,
+                            line=idx,
+                            snippet=line.strip()[:100],
+                        )
+                    )
+
+            # Check unpinned runtime package installations (SEC-017)
+            for rule_id, pattern in _UNPINNED_INSTALL_PATTERNS:
+                match_inst = pattern.search(line)
+                if match_inst:
+                    quoted_defense = bool(
+                        _DEFENSIVE_CONTEXT_PATTERN.search(line) and re.search(r"[\"'`]", line)
+                    )
+                    findings.append(
+                        AuditFinding(
+                            rule_id=rule_id,
+                            severity=Severity.MEDIUM if quoted_defense else Severity.HIGH,
+                            message=f"Unpinned runtime package installation from public registry: '{match_inst.group(0).strip()}'",
+                            file=filename,
+                            line=idx,
+                            snippet=line.strip()[:100],
+                        )
+                    )
+
         return findings
 
     def _scan_shell_content(self, text: str, filename: str) -> list[AuditFinding]:
@@ -1079,6 +1207,45 @@ class SkillAuditor:
                             rule_id=rule_id,
                             severity=Severity.HIGH,
                             message=f"Outbound exfiltration endpoint or credential transmission: '{match_exfil.group(0)}'",
+                            file=filename,
+                            line=idx,
+                            snippet=line.strip(),
+                        )
+                    )
+            for rule_id, pattern, severity in _OBFUSCATION_PATTERNS:
+                match_obf = pattern.search(line)
+                if match_obf:
+                    findings.append(
+                        AuditFinding(
+                            rule_id=rule_id,
+                            severity=severity,
+                            message=f"Obfuscated script execution or encoded payload: '{match_obf.group(0)[:60]}'",
+                            file=filename,
+                            line=idx,
+                            snippet=line.strip(),
+                        )
+                    )
+            for rule_id, pattern in _RESOURCE_ABUSE_PATTERNS:
+                match_res = pattern.search(line)
+                if match_res:
+                    findings.append(
+                        AuditFinding(
+                            rule_id=rule_id,
+                            severity=Severity.CRITICAL,
+                            message=f"Destructive resource abuse or disk/fork bomb pattern in script: '{match_res.group(0)[:60]}'",
+                            file=filename,
+                            line=idx,
+                            snippet=line.strip(),
+                        )
+                    )
+            for rule_id, pattern in _UNPINNED_INSTALL_PATTERNS:
+                match_inst = pattern.search(line)
+                if match_inst:
+                    findings.append(
+                        AuditFinding(
+                            rule_id=rule_id,
+                            severity=Severity.HIGH,
+                            message=f"Unpinned package installation in script: '{match_inst.group(0).strip()}'",
                             file=filename,
                             line=idx,
                             snippet=line.strip(),
@@ -1155,3 +1322,137 @@ def audit_path(path: Path, *, sandbox: bool = False) -> AuditReport:
             )
 
     return auditor.audit_file_or_dir(path, sandbox=sandbox)
+
+
+def audit_mcp_config(path: Path) -> AuditReport:
+    """Audit an MCP configuration file (mcp.json or claude_desktop_config.json) for security risks."""
+    import json
+
+    target_name = path.name or str(path)
+    if not path.is_file():
+        raise SecurityAuditError(f"MCP configuration file not found: {path}")
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise SecurityAuditError(f"Failed to parse MCP configuration JSON: {exc}") from exc
+
+    servers: dict[str, Any] = {}
+    if isinstance(data, dict):
+        if "mcpServers" in data and isinstance(data["mcpServers"], dict):
+            servers = data["mcpServers"]
+        else:
+            servers = {
+                k: v for k, v in data.items() if isinstance(v, dict) and "command" in v
+            }
+
+    findings: list[AuditFinding] = []
+    dangerous_shells = frozenset({"bash", "sh", "cmd", "cmd.exe", "powershell", "pwsh"})
+    root_paths = frozenset({"/", "\\", "c:\\", "c:/", "~", "$home"})
+
+    for s_name, s_cfg in sorted(servers.items()):
+        s_file = f"{target_name}::{s_name}"
+        if not isinstance(s_cfg, dict):
+            continue
+
+        cmd = str(s_cfg.get("command", "")).strip().lower()
+        args: list[str] = (
+            [str(a) for a in s_cfg.get("args", [])]
+            if isinstance(s_cfg.get("args"), list)
+            else []
+        )
+        env_map = (
+            s_cfg.get("env", {}) if isinstance(s_cfg.get("env"), dict) else {}
+        )
+
+        # MCP-001: Plaintext secrets in env
+        for env_k, env_v in env_map.items():
+            if not isinstance(env_v, str):
+                continue
+            is_secret = False
+            for _, pat, sev in _HARDCODED_SECRET_PATTERNS:
+                if pat.search(env_v):
+                    findings.append(
+                        AuditFinding(
+                            rule_id="MCP-001",
+                            severity=sev,
+                            message=f"Hardcoded credential secret pattern in env var '{env_k}': '{env_v[:8]}...'",
+                            file=s_file,
+                            snippet=f'"{env_k}": "{env_v[:10]}..."',
+                        )
+                    )
+                    is_secret = True
+                    break
+            if not is_secret and len(env_v) >= 20 and not env_v.startswith(("$", "%", "{")):
+                k_upper = env_k.upper()
+                if any(x in k_upper for x in ("KEY", "TOKEN", "SECRET", "PASSWORD", "AUTH")):
+                    findings.append(
+                        AuditFinding(
+                            rule_id="MCP-001",
+                            severity=Severity.HIGH,
+                            message=f"Plaintext credential value in env var '{env_k}' (use runtime variable substitution)",
+                            file=s_file,
+                            snippet=f'"{env_k}": "{env_v[:8]}..."',
+                        )
+                    )
+
+        # MCP-002: Shell interpreter as command wrapper
+        if Path(cmd).stem in dangerous_shells or cmd in dangerous_shells:
+            if any(a.lower() in ("-c", "/c") for a in args):
+                findings.append(
+                    AuditFinding(
+                        rule_id="MCP-002",
+                        severity=Severity.HIGH,
+                        message=f"MCP server invokes arbitrary shell interpreter as command: '{cmd}'",
+                        file=s_file,
+                        snippet=f'command: "{cmd}"',
+                    )
+                )
+
+        # MCP-003: Unpinned package execution in args (npx / uvx)
+        if Path(cmd).stem in ("npx", "pnpx", "uvx") or cmd in ("npx", "pnpx", "uvx"):
+            for a in args:
+                if a.startswith("-"):
+                    continue
+                if "/" in a and not a.startswith((".", "/")):
+                    parts = a.split("@")
+                    has_version = len(parts) >= 3 if a.startswith("@") else len(parts) >= 2
+                    if not has_version:
+                        findings.append(
+                            AuditFinding(
+                                rule_id="MCP-003",
+                                severity=Severity.MEDIUM,
+                                message=f"Unpinned package invocation in MCP server args: '{a}' (pin with @version)",
+                                file=s_file,
+                                snippet=f"args: {args}",
+                            )
+                        )
+                        break
+                elif not a.startswith((".", "/")) and "@" not in a and len(a) > 2:
+                    findings.append(
+                        AuditFinding(
+                            rule_id="MCP-003",
+                            severity=Severity.MEDIUM,
+                            message=f"Unpinned package invocation in MCP server args: '{a}' (pin with @version)",
+                            file=s_file,
+                            snippet=f"args: {args}",
+                        )
+                    )
+                    break
+
+        # MCP-004: Overbroad filesystem root scope
+        for a in args:
+            clean_a = a.strip().lower()
+            if clean_a in root_paths or clean_a in ("c:\\", "c:/", "/"):
+                findings.append(
+                    AuditFinding(
+                        rule_id="MCP-004",
+                        severity=Severity.HIGH,
+                        message=f"Overbroad filesystem permission: MCP server granted access to root directory '{a}'",
+                        file=s_file,
+                        snippet=f"args: {args}",
+                    )
+                )
+                break
+
+    return AuditReport(target=target_name, findings=findings)

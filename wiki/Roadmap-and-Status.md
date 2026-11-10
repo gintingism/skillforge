@@ -47,6 +47,8 @@ timeline
 - [x] **Offline Execution Sandbox Harness:** Isolated Python subprocess runner (`skillforge audit --sandbox`) blocking outbound sockets and subprocess calls while monitoring canary environment secrets.
 - [x] **Granular Allowed-Tools Enforcer (`SEC-012`):** Static verification that shell snippets and bundled scripts adhere to the tools declared in `allowed-tools`.
 - [x] **OWASP 2026 Agentic Defenses (`SEC-013` & `SEC-014`):** Persistent memory/git hook poisoning detection and Lethal Trifecta compound risk analysis.
+- [x] **Cisco Skill-Scanner Rule Alignment (`SEC-015`, `SEC-016`, `SEC-017`):** Obfuscation detection, fork bomb/resource abuse scanner, and unpinned package installation auditor.
+- [x] **MCP Configuration Auditor (`skillforge audit-mcp`):** Security auditor for `mcp.json` detecting plaintext secrets, shell command wrappers, unpinned packages, and root filesystem grants (`MCP-001` to `MCP-004`).
 - [ ] **Skill Registry Indexer:** CLI crawler to scan public GitHub repositories for `SKILL.md` packages and verify them against SkillForge security policies.
 - [ ] **Interactive TUI Dashboard:** Rich terminal user interface using Textual for live token browsing, skill activation testing, and visual diffing.
 

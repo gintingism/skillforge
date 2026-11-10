@@ -55,6 +55,14 @@ skillforge audit ./skills/my-skill --sarif findings.sarif
 skillforge audit ./skills/my-skill --json
 ```
 
+### `skillforge audit-mcp [path]`
+Audit an MCP configuration file (`mcp.json` or `claude_desktop_config.json`) for hardcoded secrets, shell wrappers, unpinned packages, and overbroad directory grants:
+```bash
+skillforge audit-mcp ./mcp.json
+skillforge audit-mcp ./mcp.json --strict
+skillforge audit-mcp ./mcp.json --json
+```
+
 ### `skillforge list`
 List all installed skills across detected assistants:
 ```bash

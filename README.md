@@ -61,6 +61,10 @@ As AI coding assistants adopt the open `SKILL.md` format, two practical problems
 | **Allowed-Tools Enforcer** | No | No | **Built-in (`SEC-012`)** |
 | **Memory & Hook Poisoning** | No | No | **Built-in (`SEC-013`, OWASP ASI06)** |
 | **Lethal Trifecta Analysis** | No | No | **Built-in (`SEC-014`, OWASP AST10)** |
+| **Obfuscation & Hex Payloads** | No | No | **Built-in (`SEC-015`, Cisco obfuscation)** |
+| **Resource Abuse & Fork Bombs** | No | No | **Built-in (`SEC-016`, Cisco resource_abuse)** |
+| **Unpinned Package Installs** | No | No | **Built-in (`SEC-017`, Cisco supply_chain)** |
+| **MCP Configuration Auditor** | No | No | **Built-in (`skillforge audit-mcp`)** |
 | **Hidden Unicode / Bidi Scans** | No | No | **Built-in (`SEC-001`)** |
 | **Python AST & Sandbox Harness** | No | No | **Built-in (`SEC-008`, `audit --sandbox`)** |
 | **Link Phishing / Spoofing** | No | No | **Built-in (`SEC-007`)** |
@@ -134,6 +138,9 @@ The auditor checks for:
 - **Allowed-Tools Scope Enforcer (SEC-012):** Flags shell execution blocks or bundled scripts when frontmatter `allowed-tools` excludes command execution.
 - **Persistent Memory & Git Hook Poisoning (SEC-013):** Detects shell append/redirection operations (`>>`, `>`, `tee -a`) targeting `CLAUDE.md`, `AGENTS.md`, `MEMORY.md`, `.cursorrules`, `.windsurfrules`, or `.git/hooks/*` (OWASP ASI06).
 - **Lethal Trifecta Compound Risk (SEC-014):** Flags packages combining private credential/env access, untrusted remote content ingestion, and external network egress (OWASP AST10).
+- **Obfuscated Payloads & Encoded Wrappers (SEC-015):** Detects base64 pipelines to shell, python b64decode eval wrappers, powershell encoded commands, and dense hex-escape sequences.
+- **Destructive Resource Abuse & Fork Bombs (SEC-016):** Identifies bash fork bombs (`:(){ :|:& };:`), disk exhaustion (`dd if=/dev/urandom`), and raw block device overwrites (`mkfs`, `> /dev/sd*`).
+- **Unpinned Runtime Package Installs (SEC-017):** Detects runtime package installations (`pip install`, `npm install -g`) without pinned versions or lockfiles.
 - **Trigger Quality (QUAL-001):** Ensures descriptions specify concrete activation conditions.
 - **Directory Alignment (QUAL-002):** Ensures folder name matches the frontmatter `name`.
 - **Progressive Disclosure Budget (QUAL-003):** Flags `SKILL.md` bodies exceeding 500 lines or ~5,000 tokens so secondary reference material is moved to `references/`.
@@ -431,12 +438,13 @@ skillforge install systematic-debugging --global
 
 ---
 
-## Built-in Skills (34 Zero-Slop Skills)
+## Built-in Skills (37 Zero-Slop Skills)
 
-SkillForge ships with 34 practical engineering skills to address common agent failure modes identified in benchmark research:
+SkillForge ships with 37 practical engineering skills to address common agent failure modes identified in benchmark research:
 
 ### Code Quality, Security & Performance
 - `supply-chain-sentinel`: Check package existence, registry age, and run CVE audits (`pip-audit`, `npm audit`) before adding dependencies.
+- `supply-chain-lockfile-guard`: Lockfile cryptographic integrity verification, unpinned runtime install detection, and lifecycle script auditing (`references/lockfile-audit-checklist.md`).
 - `secret-sanitizer`: Pre-commit git diff auditor that prevents API keys, private tokens, and credentials from leaking.
 - `lethal-trifecta-guard`: Isolation boundaries against the Lethal Trifecta (OWASP AST10) separating private credentials, untrusted content ingestion, and external network egress (`references/isolation-boundaries.md`).
 - `memory-hygiene-sentinel`: Cross-session memory and git hook protection for `CLAUDE.md`, `AGENTS.md`, `MEMORY.md`, `.cursorrules`, and `.git/hooks/` (OWASP ASI06, `references/memory-audit-checklist.md`).
@@ -465,6 +473,8 @@ SkillForge ships with 34 practical engineering skills to address common agent fa
 - `traceback-postmortem`: 5-line root cause distillation from lengthy stack traces to prevent context window poisoning (`references/5-whys-template.md`).
 
 ### Context Efficiency & Multi-Agent Operations
+- `mcp-least-privilege-sentinel`: Least-privilege boundary enforcement, read-write segregation, and scoped filesystem permissions for MCP tools (`references/mcp-permission-matrix.md`).
+- `attention-anchor-ledger`: State anchor ledger to prevent model attention degradation (*lost-in-the-middle*) in long-context threads exceeding 100k tokens (`references/state-anchor-schema.md`).
 - `skill-architect`: Multi-file progressive disclosure guide for authoring low-token `SKILL.md`, `AGENTS.md`, and `CLAUDE.md` files.
 - `caveman`: Terse technical communication mode that reduces token spend while preserving exact paths, commands, and errors.
 - `context-compactor`: Structured state distillation and active hypothesis ledgers for long-running agent threads nearing context limits.

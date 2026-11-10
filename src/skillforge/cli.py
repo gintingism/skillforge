@@ -19,7 +19,7 @@ from .mcp_server import run_mcp_server
 from .openapi import import_openapi
 from .optimizer import optimize_skill
 from .registry import BuiltinRegistry, CompositeRegistry, GitRemoteRegistry, LocalRegistry, Registry
-from .security import Severity, SkillAuditor, audit_path
+from .security import Severity, SkillAuditor, audit_mcp_config, audit_path
 from .skill import Skill, SkillPackage
 
 app = typer.Typer(help="Universal package manager, security auditor, and MCP server for portable agent skills.")
@@ -76,6 +76,38 @@ def audit(
             typer.echo(json.dumps({"passed": False, "error": str(exc)}))
         else:
             typer.echo(f"Audit error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if sarif_output:
+        sarif_output.parent.mkdir(parents=True, exist_ok=True)
+        sarif_output.write_text(json.dumps(report.to_sarif(), indent=2), encoding="utf-8")
+        if not json_output:
+            typer.echo(f"Wrote SARIF report to {sarif_output}")
+
+    if json_output:
+        typer.echo(json.dumps(report.to_dict()))
+    else:
+        typer.echo(report.render_text())
+
+    if not report.passed or (strict and report.findings):
+        raise typer.Exit(code=1)
+
+
+@app.command("audit-mcp")
+def audit_mcp(
+    path: Path = typer.Argument(Path("mcp.json"), help="Path to mcp.json or claude_desktop_config.json file."),
+    strict: bool = typer.Option(False, "--strict", help="Fail on any warning or low-severity finding."),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+    sarif_output: Path | None = typer.Option(None, "--sarif", help="Emit OASIS SARIF v2.1.0 report for GitHub Code Scanning."),
+) -> None:
+    """Audit an MCP configuration file for plaintext secrets, shell command wrappers, and unpinned packages."""
+    try:
+        report = audit_mcp_config(path)
+    except (SkillForgeError, OSError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"passed": False, "error": str(exc)}))
+        else:
+            typer.echo(f"MCP audit error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
     if sarif_output:

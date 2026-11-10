@@ -31,6 +31,13 @@ Common attack vectors in community-shared skills include:
 | **`SEC-012`** | **HIGH** | Allowed-Tools Scope Violation | Flags shell execution blocks or bundled scripts when frontmatter `allowed-tools` excludes command execution. |
 | **`SEC-013`** | **HIGH** | Memory & Hook Poisoning | Detects shell redirection or append operations (`>>`, `>`, `tee -a`) targeting `CLAUDE.md`, `AGENTS.md`, `MEMORY.md`, `.cursorrules`, `.windsurfrules`, or `.git/hooks/*` (OWASP ASI06). |
 | **`SEC-014`** | **CRITICAL** | Lethal Trifecta Compound Risk | Flags skills combining private credential/env access, untrusted external content ingestion, and outbound network egress (OWASP AST10). |
+| **`SEC-015`** | **CRITICAL / HIGH** | Obfuscation & Encoded Payloads | Detects base64 pipelines, python b64decode execution, powershell encoded commands, and hex escapes (Cisco obfuscation). |
+| **`SEC-016`** | **CRITICAL** | Destructive Resource Abuse | Detects bash fork bombs (`:(){ :|:& };:`), disk exhaustion (`dd if=/dev/urandom`), and raw disk formatting (Cisco resource_abuse). |
+| **`SEC-017`** | **HIGH** | Unpinned Package Installation | Detects unpinned runtime package installations from public registries (`pip install`, `npm install -g`) without lockfiles or version constraints (Cisco supply_chain). |
+| **`MCP-001`** | **CRITICAL / HIGH** | MCP Plaintext Secret | Detects hardcoded API tokens or embedded secret strings in MCP configuration environment variables. |
+| **`MCP-002`** | **HIGH** | MCP Shell Wrapper | Flags arbitrary shell interpreter wrappers (`bash -c`, `sh -c`, `powershell`) declared in MCP server command fields. |
+| **`MCP-003`** | **MEDIUM** | MCP Unpinned Package | Flags unpinned package executions (`npx`, `uvx`) lacking exact `@version` tags in MCP server arguments. |
+| **`MCP-004`** | **HIGH** | MCP Root Filesystem Grant | Flags permissive root filesystem (`/`, `C:\`, `~`, `$HOME`) directory exposure in MCP arguments. |
 | **`QUAL-001`** | **LOW** | Trigger Quality | Verifies whether the skill description includes explicit activation triggers (`when`, `use when`, `for`) necessary for token-efficient progressive disclosure. |
 | **`QUAL-002`** | **MEDIUM** | Spec Compliance | Ensures directory name matches the `name` field in YAML frontmatter and validates identifier safety. |
 | **`QUAL-003`** | **LOW** | Context Budget Limit | Flags `SKILL.md` bodies exceeding 500 lines or ~5,000 tokens so reference docs are extracted into `references/`. |

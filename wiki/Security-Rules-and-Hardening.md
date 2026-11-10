@@ -4,7 +4,7 @@ This document provides the full specification for SkillForge's security and qual
 
 ---
 
-## Security Rules Matrix (SEC-001 to SEC-014)
+## Security Rules Matrix (SEC-001 to SEC-017, MCP-001 to MCP-004)
 
 | Rule ID | Name | Severity | Attack Vector Addressed |
 | :--- | :--- | :--- | :--- |
@@ -22,6 +22,13 @@ This document provides the full specification for SkillForge's security and qual
 | **SEC-012** | Allowed-Tools Scope Violation | HIGH | Shell commands or execution scripts in skill body when frontmatter `allowed-tools` excludes shell execution. |
 | **SEC-013** | Persistent Memory & Git Hook Poisoning | HIGH | Shell redirection or append operations (`>>`, `>`, `tee -a`) targeting persistent agent memory files (`CLAUDE.md`, `AGENTS.md`, `MEMORY.md`, `.cursorrules`, `.windsurfrules`) or `.git/hooks/*` (OWASP ASI06). |
 | **SEC-014** | Lethal Trifecta Compound Risk | CRITICAL | Skills combining private credential/env access, untrusted external content ingestion, and outbound network egress in the same package (OWASP AST10). |
+| **SEC-015** | Obfuscated Payloads & Encoded Wrappers | CRITICAL / HIGH | Base64 pipelines, python b64decode eval execution, powershell encoded commands, and hex escapes (Cisco obfuscation). |
+| **SEC-016** | Destructive Resource Abuse | CRITICAL | Bash fork bombs (`:(){ :|:& };:`), disk exhaustion (`dd if=/dev/urandom`), and raw disk formatting (Cisco resource_abuse). |
+| **SEC-017** | Unpinned Package Installation | HIGH | Runtime unpinned package installations from public registries (`pip install`, `npm install -g`) without lockfiles or pinned versions (Cisco supply_chain). |
+| **MCP-001** | MCP Plaintext Secret | CRITICAL / HIGH | Hardcoded API tokens or embedded secret strings in MCP configuration environment variables. |
+| **MCP-002** | MCP Shell Wrapper | HIGH | Arbitrary shell interpreter wrappers (`bash -c`, `sh -c`, `powershell`) declared in MCP server command fields. |
+| **MCP-003** | MCP Unpinned Package | MEDIUM | Unpinned package executions (`npx`, `uvx`) lacking exact `@version` tags in MCP server arguments. |
+| **MCP-004** | MCP Root Filesystem Grant | HIGH | Permissive root filesystem (`/`, `C:\`, `~`, `$HOME`) directory exposure in MCP arguments. |
 
 ---
 

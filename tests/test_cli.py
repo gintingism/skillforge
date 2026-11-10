@@ -304,3 +304,48 @@ def test_cli_audit_sandbox_flag(tmp_path: Path) -> None:
     assert any("Runtime sandbox violation" in f["message"] for f in payload["findings"])
 
 
+def test_cli_audit_mcp_command(tmp_path: Path) -> None:
+    mcp_file = tmp_path / "mcp.json"
+    mcp_file.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "safe-server": {
+                        "command": "python",
+                        "args": ["-m", "my_server"],
+                        "env": {"DEBUG": "1"},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    res_ok = runner.invoke(app, ["audit-mcp", str(mcp_file), "--json"])
+    assert res_ok.exit_code == 0, res_ok.output
+    ok_payload = json.loads(res_ok.stdout)
+    assert ok_payload["passed"] is True
+    assert ok_payload["score"] == 100
+
+    bad_mcp = tmp_path / "bad_mcp.json"
+    bad_mcp.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "insecure-server": {
+                        "command": "sh",
+                        "args": ["-c", "cat /etc/passwd"],
+                        "env": {"SECRET": "ghp_123456789012345678901234567890123456"},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    res_bad = runner.invoke(app, ["audit-mcp", str(bad_mcp), "--json"])
+    assert res_bad.exit_code == 1
+    bad_payload = json.loads(res_bad.stdout)
+    assert bad_payload["passed"] is False
+    assert any(f["rule_id"] == "MCP-001" for f in bad_payload["findings"])
+
+
+
