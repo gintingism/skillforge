@@ -156,7 +156,24 @@ skillforge audit ./skills/my-new-skill --sarif results.sarif
 skillforge audit . --sarif results.sarif
 ```
 
-### 3. Profile startup token load (`budget`)
+### 3. Audit Model Context Protocol configurations (`audit-mcp`)
+
+Inspect client MCP configuration files (`mcp.json`, `claude_desktop_config.json`, `.gemini/settings.json`) for hardcoded secrets, shell wrappers, unpinned packages, and overbroad root directory grants:
+
+```bash
+# Audit default mcp.json
+skillforge audit-mcp
+
+# Audit an explicit client configuration
+skillforge audit-mcp ./mcp.json --strict
+```
+```text
+Audit Report: mcp.json
+Status: PASSED (Score: 100/100)
+Total Findings: 0
+```
+
+### 4. Profile startup token load (`budget`)
 
 Model-invoked skills keep their `name` and `description` in the prompt on every turn. Measure how many tokens your skills consume before triggering:
 
@@ -166,13 +183,13 @@ skillforge budget
 skillforge budget --builtin
 ```
 ```text
-Context Budget Profile (34 skills)
-  Always-Loaded Startup Pointer Cost: ~1680 tokens
-  On-Demand SKILL.md Body Cost:       ~11200 tokens
-  Disclosed Resources Cost:           ~4100 tokens
+Context Budget Profile (37 skills)
+  Always-Loaded Startup Pointer Cost: ~2286 tokens
+  On-Demand SKILL.md Body Cost:       ~14357 tokens
+  Disclosed Resources Cost:           ~3947 tokens
 ```
 
-### 4. Test trigger accuracy with eval suites (`test`)
+### 5. Test trigger accuracy with eval suites (`test`)
 
 Verify that your skill description triggers on relevant user requests, ignores unrelated prompts, and satisfies keyword constraints:
 
@@ -195,7 +212,7 @@ Result: PASSED (4/4 passed)
 
 Use `--json` in CI to ensure changes to `description` do not break activation behavior.
 
-### 5. Optimize bloated skills with progressive disclosure (`optimize`)
+### 6. Optimize bloated skills with progressive disclosure (`optimize`)
 
 When a skill exceeds the 500-line or 5,000-token limit (`QUAL-003`), extract secondary guides into `references/` while keeping concise pointers in `SKILL.md`:
 
@@ -217,7 +234,7 @@ Optimized 'bloated-api-skill':
   Audit Verification: PASSED
 ```
 
-### 6. Convert OpenAPI / Swagger specs into skills (`import-openapi`)
+### 7. Convert OpenAPI / Swagger specs into skills (`import-openapi`)
 
 Convert an OpenAPI 3.0, 3.1, or Swagger 2.0 specification (JSON or YAML) into a portable skill package:
 
@@ -232,7 +249,7 @@ Successfully imported 'petstore-api' into skills/petstore-api
 
 The resulting package places an executive summary in `SKILL.md` and moves full endpoint schemas to `references/endpoints.md`, keeping prompt overhead low.
 
-### 7. Lint agent instruction files (`lint-context`)
+### 8. Lint agent instruction files (`lint-context`)
 
 Scan root-level instruction documents (`AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.windsurfrules`, `.gemini/GEMINI.md`) for context-window health:
 
@@ -258,7 +275,7 @@ Findings:
   [LOW] CTX-003 (AGENTS.md:14): Generic buzzword 'seamless' found; replace with concrete operational constraints.
 ```
 
-### 8. Generate a verified security badge (`badge`)
+### 9. Generate a verified security badge (`badge`)
 
 Show users that your skill passed security auditing. Generate a markdown or HTML badge for your repository:
 
@@ -269,7 +286,7 @@ skillforge badge ./my-skill
 [![Audited by SkillForge](https://img.shields.io/badge/SkillForge-Security%20Passed%20100%2F100-2ea44f?logo=shield&style=flat-square)](https://github.com/gintingism/skillforge)
 ```
 
-### 9. Install directly from GitHub (`add`)
+### 10. Install directly from GitHub (`add`)
 
 Pull skills from remote repositories with security auditing and commit pinning:
 
@@ -286,7 +303,7 @@ skillforge add gintingism/skillforge:systematic-debugging
 
 SkillForge audits the skill, installs it into detected assistant directories, and records the SHA-256 digest and Git commit SHA in `skillforge.lock`.
 
-### 10. Verify skill integrity and detect drift (`verify`)
+### 11. Verify skill integrity and detect drift (`verify`)
 
 Check installed skills against `skillforge.lock` in CI/CD or local environments without making network requests. Detects file tampering, missing dependencies, or unmanaged skills:
 
@@ -304,7 +321,7 @@ skillforge verify --json
 Verification PASSED: 2 skill(s) match skillforge.lock.
 ```
 
-### 11. Compare changes before updating (`diff`)
+### 12. Compare changes before updating (`diff`)
 
 Inspect diffs between local skills and upstream repositories, or compare two skill versions:
 
@@ -313,7 +330,7 @@ skillforge diff ./skills/my-skill
 skillforge diff my-skill gintingism/skillforge:my-skill
 ```
 
-### 12. Manage installed skills (`list` & `remove`)
+### 13. Manage installed skills (`list` & `remove`)
 
 See which skills are active across your editor targets:
 
@@ -335,7 +352,7 @@ Remove a skill from all detected assistants and update your lockfile:
 skillforge remove antislop-code
 ```
 
-### 13. Create and package skills (`create` & `pack`)
+### 14. Create and package skills (`create` & `pack`)
 
 Scaffold a single skill file or a full package directory with scripts and references:
 
@@ -491,7 +508,7 @@ SkillForge ships with 37 practical engineering skills to address common agent fa
 
 SkillForge provides deterministic, 100% offline static and sandboxed auditing to catch dangerous instruction patterns before skills run:
 
-- **What SkillForge Catches:** Malicious shell pipelines (`curl | bash`, `irm | iex`), reverse shells, unauthorized file reads (`~/.ssh`, `~/.aws`), persistent memory and git hook poisoning (`SEC-013`), Lethal Trifecta compound exfiltration chains (`SEC-014`), Python AST taint flows and runtime sandbox network/process violations (`SEC-008` / `--sandbox`), zero-width unicode obfuscation, deceptive link targets, executables hidden in `assets/`, and context-window token bloat. A small regression corpus in `tests/test_corpus.py` guards these patterns; it is not a measurement of real-world detection rates.
+- **What SkillForge Catches:** Malicious shell pipelines (`curl | bash`, `irm | iex`), reverse shells, unauthorized file reads (`~/.ssh`, `~/.aws`), persistent memory and git hook poisoning (`SEC-013`), Lethal Trifecta compound exfiltration chains (`SEC-014`), obfuscated execution wrappers (`SEC-015`), fork bombs and resource abuse (`SEC-016`), unpinned package installs (`SEC-017`), MCP configuration vulnerabilities (`MCP-001` to `MCP-004`), Python AST taint flows and runtime sandbox network/process violations (`SEC-008` / `--sandbox`), zero-width unicode obfuscation, deceptive link targets, executables hidden in `assets/`, and context-window token bloat. A small regression corpus in `tests/test_corpus.py` guards these patterns; it is not a measurement of real-world detection rates.
 - **What Requires Human Review & Sandboxes:** Pure natural-language policy evasion (instructions that subtly coax models into biased or non-compliant decisions without executable code or known jailbreak keywords) cannot be reliably detected by regex or AST analysis alone. We recommend combining SkillForge audits with runtime OS sandboxing and requiring human confirmation for irreversible external actions.
 
 ---
