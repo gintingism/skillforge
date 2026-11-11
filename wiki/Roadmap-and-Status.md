@@ -43,19 +43,20 @@ timeline
 
 ## Future Roadmap
 
-### v0.3.0 (In Progress: Dynamic Sandboxing & Agentic Security)
+### v0.3.0 (Delivered: Dynamic Sandboxing, Attestation & Ecosystem Hub)
 - [x] **Offline Execution Sandbox Harness:** Isolated Python subprocess runner (`skillforge audit --sandbox`) blocking outbound sockets and subprocess calls while monitoring canary environment secrets.
 - [x] **Granular Allowed-Tools Enforcer (`SEC-012`):** Static verification that shell snippets and bundled scripts adhere to the tools declared in `allowed-tools`.
 - [x] **OWASP 2026 Agentic Defenses (`SEC-013` & `SEC-014`):** Persistent memory/git hook poisoning detection and Lethal Trifecta compound risk analysis.
 - [x] **Cisco Skill-Scanner Rule Alignment (`SEC-015`, `SEC-016`, `SEC-017`):** Obfuscation detection, fork bomb/resource abuse scanner, and unpinned package installation auditor.
 - [x] **MCP Configuration Auditor (`skillforge audit-mcp`):** Security auditor for `mcp.json` detecting plaintext secrets, shell command wrappers, unpinned packages, and root filesystem grants (`MCP-001` to `MCP-004`).
-- [ ] **Skill Registry Indexer:** CLI crawler to scan public GitHub repositories for `SKILL.md` packages and verify them against SkillForge security policies.
-- [ ] **Interactive TUI Dashboard:** Rich terminal user interface using Textual for live token browsing, skill activation testing, and visual diffing.
+- [x] **Skill Registry Indexer & Remote Search:** CLI crawler to scan repositories for `SKILL.md` packages and index them into discovery cache (`skillforge index`, `skillforge search-remote`) with automated install security gates.
+- [x] **Cryptographic Attestation & Signatures:** Tamper-evident HMAC-SHA256 release signing and manifest verification for skill packages and lockfiles (`skillforge sign`, `skillforge verify-signature`, `skillforge keygen`).
+- [x] **Language Server Protocol (LSP) Daemon:** Standard LSP 3.17 server (`skillforge lsp`) delivering real-time diagnostics, frontmatter linting, and completion in Cursor, VS Code, and Neovim.
+- [x] **Interactive Terminal Dashboard:** Rich terminal dashboard (`skillforge tui`) for live token budget visualization, security posture grade cards, and adapter state inspection.
 
 ### v1.0.0 (Long-Term: Universal Skill Ecosystem)
 - [ ] **Cross-Agent Semantic Evaluation Benchmark:** Automated benchmark measuring trigger precision, recall, and false positive rates across diverse LLM foundation models (Claude 3.7 Sonnet, Gemini 2.5 Flash, GPT-4.5).
-- [ ] **Federated Registry Signatures:** Cryptographic signing of skill releases using Sigstore / Cosign for tamper-proof public distribution.
-- [ ] **Streaming LSP Server:** Language Server Protocol (LSP) daemon for live in-editor diagnostics and autocompletion of `SKILL.md` frontmatter and reference links in VS Code, Cursor, and Neovim.
+- [ ] **Federated WebAssembly Sandbox:** In-process WebAssembly sandbox runner for agent skills with isolated memory space.
 
 ---
 

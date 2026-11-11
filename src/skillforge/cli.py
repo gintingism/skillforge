@@ -428,12 +428,28 @@ def install(
     registry: Path = typer.Option(Path(".skillforge"), "--registry"),
     project: Path = typer.Option(Path("."), "--project"),
     global_install: bool = typer.Option(False, "--global", "-g", help="Install into global assistant configs."),
+    audit_gate: bool = typer.Option(True, "--audit-gate/--no-audit-gate", help="Enforce security audit before installation."),
+    min_score: int = typer.Option(80, "--min-score", help="Minimum required security score to allow installation."),
+    insecure: bool = typer.Option(False, "--insecure", help="Bypass security audit gate."),
 ) -> None:
     """Install a skill from a registry into detected assistant targets."""
     try:
         staging_dir = project / ".skillforge-staging"
         skill_path = _registry(registry).install(name, staging_dir)
         package = SkillPackage.load(skill_path.parent if skill_path.name == "SKILL.md" else skill_path)
+
+        if not insecure and audit_gate:
+            report = SkillAuditor().audit_package(package)
+            if report.score < min_score or any(f.severity in (Severity.CRITICAL, Severity.HIGH) for f in report.findings):
+                typer.echo(
+                    f"Security audit gate rejected installation for '{package.skill.name}' (Score: {report.score}/{min_score})",
+                    err=True,
+                )
+                for f in report.findings:
+                    if f.severity in (Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM):
+                        typer.echo(f"  [{f.severity.value}] {f.rule_id}: {f.message}", err=True)
+                typer.echo("Use --insecure to bypass this security gate if you trust the source.", err=True)
+                raise typer.Exit(code=2)
 
         adapters = detect_adapters(project, global_scope=global_install)
         if not adapters:
@@ -1026,6 +1042,149 @@ def remove(
 def serve_mcp() -> None:
     """Serve SkillForge over MCP stdio."""
     run_mcp_server()
+
+
+@app.command("search-remote")
+def search_remote(
+    query: str = typer.Argument("", help="Search query (empty to list all remote skills)."),
+    tag: str | None = typer.Option(None, "--tag", "-t", help="Filter by tag."),
+) -> None:
+    """Search the remote skills catalog (community and ecosystem repositories)."""
+    from skillforge.remote_index import RemoteIndex
+
+    idx = RemoteIndex()
+    results = idx.search(query, tag=tag)
+    if not results:
+        typer.echo(f"No remote skills matched '{query}'.")
+        return
+
+    typer.echo(f"Found {len(results)} remote skill(s):")
+    for r in results:
+        vbadge = " [VERIFIED]" if r.verified else ""
+        typer.echo(f"  {r.name:<32} {r.spec:<48}{vbadge}")
+        typer.echo(f"    {r.description}")
+
+
+@app.command("index")
+def index_repo(
+    repo_dir: Path = typer.Argument(Path("."), help="Path to local or cloned repository to index."),
+    url: str = typer.Option("https://github.com/community/skills", "--url", help="Repository URL."),
+) -> None:
+    """Scan and index all SKILL.md packages in a repository into the local discovery catalog."""
+    from skillforge.remote_index import RemoteIndex
+
+    idx = RemoteIndex()
+    found = idx.index_directory(repo_dir, url)
+    typer.echo(f"Indexed {len(found)} skill(s) from {repo_dir} into {idx.cache_file}.")
+    for s in found:
+        typer.echo(f"  + {s.name} ({s.spec}) - Security Score: {s.security_score}/100")
+
+
+@app.command("lsp")
+def run_lsp() -> None:
+    """Run SkillForge Language Server Protocol (LSP) daemon over stdio."""
+    from skillforge.lsp import SkillLanguageServer
+
+    server = SkillLanguageServer()
+    server.run_stdio()
+
+
+@app.command("keygen")
+def keygen(
+    out: Path | None = typer.Option(None, "--out", "-o", help="Optional output file to save key."),
+) -> None:
+    """Generate a cryptographically secure 256-bit signing key for skill releases."""
+    from skillforge.signing import SkillSigner
+
+    key = SkillSigner.generate_key()
+    if out:
+        out.write_text(key.strip() + "\n", encoding="utf-8")
+        typer.echo(f"Generated secret key saved to {out}")
+    else:
+        typer.echo(f"Secret signing key (keep safe!):\n{key}")
+
+
+@app.command("sign")
+def sign_artifact(
+    path: Path = typer.Argument(..., help="Path to skill directory or skillforge.lock."),
+    key: str | None = typer.Option(None, "--key", "-k", help="Secret key hex string (or env SKILLFORGE_KEY)."),
+    key_file: Path | None = typer.Option(None, "--key-file", help="File containing secret key."),
+    signer: str = typer.Option("local-maintainer", "--signer", help="Signer identity tag."),
+) -> None:
+    """Sign a skill package or lockfile with HMAC-SHA256 tamper-evident attestation."""
+    import os
+    from skillforge.signing import SkillSigner, SigningError
+
+    secret = key or (
+        key_file.read_text(encoding="utf-8").strip()
+        if key_file and key_file.is_file()
+        else os.environ.get("SKILLFORGE_KEY")
+    )
+    if not secret:
+        typer.echo("Error: A signing key must be provided via --key, --key-file, or SKILLFORGE_KEY env var.", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        if path.is_file() and path.name.endswith(".lock"):
+            sig_file = SkillSigner.sign_lockfile(path, secret, signer_id=signer)
+            typer.echo(f"Signed lockfile: {sig_file}")
+        elif path.is_dir() or path.name == "SKILL.md":
+            skill_dir = path if path.is_dir() else path.parent
+            payload = SkillSigner.sign_skill(skill_dir, secret, signer_id=signer)
+            sig_file = SkillSigner.write_signature(skill_dir, payload)
+            typer.echo(f"Signed skill package ({len(payload['manifest'])} files): {sig_file}")
+        else:
+            typer.echo(f"Error: Path {path} is neither a skill directory nor a lockfile.", err=True)
+            raise typer.Exit(code=1)
+    except SigningError as exc:
+        typer.echo(f"Signing failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("verify-signature")
+def verify_sig(
+    path: Path = typer.Argument(..., help="Path to skill directory or skillforge.lock to verify."),
+    key: str | None = typer.Option(None, "--key", "-k", help="Optional secret key to verify HMAC."),
+    key_file: Path | None = typer.Option(None, "--key-file", help="File containing secret key."),
+) -> None:
+    """Verify signature manifest integrity and cryptographic authenticity."""
+    import os
+    from skillforge.signing import SkillSigner
+
+    secret = key or (
+        key_file.read_text(encoding="utf-8").strip()
+        if key_file and key_file.is_file()
+        else os.environ.get("SKILLFORGE_KEY")
+    )
+
+    if path.is_file() and path.name.endswith(".lock"):
+        res = SkillSigner.verify_lockfile(path, key=secret)
+    elif path.is_dir() or path.name == "SKILL.md":
+        skill_dir = path if path.is_dir() else path.parent
+        res = SkillSigner.verify_skill(skill_dir, key=secret)
+    else:
+        typer.echo(f"Error: Path {path} is neither a skill directory nor a lockfile.", err=True)
+        raise typer.Exit(code=1)
+
+    if res.valid:
+        typer.echo(f"Verification PASSED: {res.summary}")
+    else:
+        typer.echo(f"Verification FAILED: {res.summary}", err=True)
+        for issue in res.issues:
+            typer.echo(f"  [TAMPER DETECTED] {issue}", err=True)
+        raise typer.Exit(code=1)
+
+
+@app.command("tui")
+def tui_command(
+    project: Path = typer.Option(Path("."), "--project", "-p", help="Target project root."),
+    static: bool = typer.Option(False, "--static", help="Print static dashboard snapshot once."),
+    watch: bool = typer.Option(False, "--watch", "-w", help="Enable continuous live refresh."),
+) -> None:
+    """Launch interactive terminal dashboard showing token budgets, security posture, and skills."""
+    from skillforge.tui import run_tui
+
+    run_tui(project, watch=watch)
 
 
 if __name__ == "__main__":

@@ -108,4 +108,56 @@ Install a local or built-in skill into detected assistant targets:
 ```bash
 skillforge install systematic-debugging
 skillforge install systematic-debugging --global
+
+# With custom security audit gate score
+skillforge install custom-skill --min-score 85
+
+# Bypass security gate (insecure)
+skillforge install legacy-skill --insecure
+```
+
+### `skillforge search-remote [query]`
+Search the remote community skills catalog:
+```bash
+skillforge search-remote "trifecta"
+skillforge search-remote "" --tag security
+```
+
+### `skillforge index [repo_dir]`
+Scan and index all skills from a repository into the local discovery cache:
+```bash
+skillforge index ./community-skills --url https://github.com/org/repo
+```
+
+### `skillforge lsp`
+Start the Language Server Protocol (LSP) daemon over standard I/O:
+```bash
+skillforge lsp
+```
+
+### `skillforge keygen`
+Generate a high-entropy 256-bit signing key for skill releases:
+```bash
+skillforge keygen --out skill.key
+```
+
+### `skillforge sign <path>`
+Sign a skill directory or `skillforge.lock` with an HMAC-SHA256 manifest signature:
+```bash
+skillforge sign ./skills/my-skill --key-file skill.key --signer "release-bot"
+skillforge sign ./skillforge.lock --key-file skill.key
+```
+
+### `skillforge verify-signature <path>`
+Verify that all files in a skill or lockfile match their signed digests:
+```bash
+skillforge verify-signature ./skills/my-skill --key-file skill.key
+skillforge verify-signature ./skillforge.lock --key-file skill.key
+```
+
+### `skillforge tui`
+Launch the terminal user interface dashboard:
+```bash
+skillforge tui --static
+skillforge tui --watch
 ```

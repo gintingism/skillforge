@@ -75,6 +75,10 @@ As AI coding assistants adopt the open `SKILL.md` format, two practical problems
 | **OpenAPI / Swagger Importer** | No | No | **Built-in (`skillforge import-openapi`)** |
 | **OASIS SARIF v2.1.0 Export** | No | No | **Built-in (`--sarif` for Code Scanning)** |
 | **Reproducible Lockfile** | No | Manifest only | **SHA-256 + Pinned Git Commit SHA** |
+| **Cryptographic Attestation** | No | No | **Built-in (`skillforge sign` / `verify-signature`)** |
+| **Language Server (LSP)** | No | No | **Built-in (`skillforge lsp` stdio daemon)** |
+| **Remote Registry & Crawler** | No | Partial | **Built-in (`skillforge search-remote`, `index`)** |
+| **Terminal Dashboard (TUI)** | No | No | **Built-in (`skillforge tui` via Rich)** |
 | **Native MCP Server & Agent Plugins 1.0** | No | Partial | **Built-in (`mcp.json`, `serve-mcp`)** |
 | **Supported Assistants** | Manual | Single target | **Claude, Cursor, Antigravity, Windsurf, Cline, Codex, Copilot** |
 
@@ -368,6 +372,67 @@ Pack a skill into a zip archive, or unpack one safely with path traversal protec
 ```bash
 skillforge pack ./db-migrator --output ./db-migrator.zip
 skillforge unpack ./db-migrator.zip --output ./skills
+```
+
+### 15. Search remote skills and community index (`search-remote` & `index`)
+
+Discover skills from verified remote repositories or index entire skill collections into your local discovery catalog:
+
+```bash
+# Query curated remote index by keyword or tag
+skillforge search-remote "trifecta"
+skillforge search-remote "" --tag security
+
+# Scan and index skills from any local directory or cloned repository
+skillforge index ./community-skills --url https://github.com/my-org/skills
+
+# Install with automatic security gate enforcement (blocks score < 80 or critical findings)
+skillforge install lethal-trifecta-guard
+```
+
+### 16. Real-time editor linting with Language Server Protocol (`lsp`)
+
+SkillForge includes an LSP daemon conforming to Language Server Protocol 3.17 over standard I/O:
+
+```bash
+# Start Language Server Protocol daemon
+skillforge lsp
+```
+
+Configure `skillforge lsp` as an LSP server in Cursor (`settings.json`), VS Code, or Neovim (`nvim-lspconfig`) for `*.md` files containing YAML frontmatter:
+* **Real-time Diagnostics:** flags missing required frontmatter, kebab-case violations, token budget blowups, and rules `SEC-001` through `SEC-017` on save.
+* **Hover Analysis:** provides live word count, token weight estimations, and security score.
+* **Completions:** auto-completes standard skill schema keys (`name`, `description`, `version`, `author`, `tags`, `allowed-tools`).
+
+### 17. Cryptographic signing and tamper verification (`sign` & `verify-signature`)
+
+Prevent supply chain attacks and man-in-the-middle tampering by generating HMAC-SHA256 file manifest signatures for published skills and lockfiles:
+
+```bash
+# Generate a cryptographically secure 256-bit key
+skillforge keygen --out skill.key
+
+# Sign a skill package directory
+skillforge sign ./skills/db-migrator --key-file skill.key --signer "security-team"
+
+# Verify tamper-integrity across all files
+skillforge verify-signature ./skills/db-migrator --key-file skill.key
+
+# Sign and verify skillforge.lock
+skillforge sign ./skillforge.lock --key-file skill.key
+skillforge verify-signature ./skillforge.lock --key-file skill.key
+```
+
+### 18. Interactive Terminal Dashboard (`tui`)
+
+Inspect token budgets, security posture, and installed assistant adapters in a unified terminal view:
+
+```bash
+# Snapshot report (ideal for scripts and CI)
+skillforge tui --static
+
+# Live dashboard with periodic refresh
+skillforge tui --watch
 ```
 
 ---
