@@ -1,27 +1,28 @@
-### [SkillForge Wiki](Home)
+### [SkillForge Documentation](Home)
 
-**Core Documentation**
+**Getting Started**
 * [Home](Home)
-* [Getting Started](Getting-Started)
-* [Architecture & Design](Architecture-and-Design)
+* [Getting Started Guide](Getting-Started)
+* [Architecture and Design](Architecture-and-Design)
 
-**Security & Hardening**
-* [Security Rules Matrix](Security-Rules-and-Hardening)
-* [Static Scanner Scope & Limits](Security-Rules-and-Hardening#static-scanner-scope--honest-limits)
+**Security and Audit**
+* [Security Rules and Hardening](Security-Rules-and-Hardening)
+* [Cryptographic Attestation](Cryptographic-Attestation-and-Signing)
 
-**Performance & Context**
-* [Token Profiling & Budgets](Token-Profiler-and-Progressive-Disclosure)
-* [Context File Linter](Token-Profiler-and-Progressive-Disclosure#context-file-linter-lint-context)
+**Performance and Context**
+* [Token Profiling and Budgets](Token-Profiler-and-Progressive-Disclosure)
+* [Terminal User Interface](Terminal-User-Interface-TUI)
 
-**Ecosystem & Standards**
+**Developer Tools**
+* [Language Server Protocol](Language-Server-Protocol-LSP)
+* [Remote Registry and Crawler](Remote-Registry-and-Crawler)
+
+**Catalogs and Reference**
 * [Built-in Skills Catalog](Built-in-Skills-Catalog)
-* [Model Context Protocol (MCP)](Architecture-and-Design#model-context-protocol-mcp-integration)
-
-**Project Information**
-* [Roadmap & Status](Roadmap-and-Status)
-* [Troubleshooting & FAQ](Troubleshooting-and-FAQ)
+* [Roadmap and Status](Roadmap-and-Status)
+* [Troubleshooting and FAQ](Troubleshooting-and-FAQ)
 
 ---
-* [Main Repository](https://github.com/gintingism/skillforge)
+* [GitHub Repository](https://github.com/gintingism/skillforge)
 * [PyPI Package](https://pypi.org/project/agent-skillforge/)
-* [HOL Registry](https://hol.org/registry/plugins/gintingism%2Fskillforge)
+* [HOL Registry Listing](https://hol.org/registry/plugins/gintingism%2Fskillforge)

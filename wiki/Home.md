@@ -1,69 +1,73 @@
 # Welcome to the SkillForge Wiki
 
-**SkillForge** is an open-source universal package manager, static security auditor, and context token profiler for portable AI agent skills (`SKILL.md`).
+SkillForge is an open-source package manager, offline security scanner, and context token profiler for portable AI agent skills (conforming to the open `SKILL.md` specification).
 
-It enables engineering teams and agent developers to audit third-party skills for prompt injections and malicious scripts, profile context window token overhead, enforce progressive disclosure architectures, and synchronize skills across Claude Code, Cursor, Google Antigravity, Windsurf, Cline, Codex, and GitHub Copilot.
+It gives engineering teams and agent builders a reliable toolset to audit third-party skills for prompt injections and malicious scripts, profile context window token weight, enforce progressive disclosure architectures, and synchronize skills across Claude Code, Cursor, Google Antigravity, Windsurf, Cline, Codex, and GitHub Copilot.
 
 ```bash
-# Instant workspace health check without installation
+# Workspace health check without permanent installation
 uvx agent-skillforge doctor
 
-# Or install permanently via pip
+# Or install via pip
 pip install agent-skillforge
 ```
 
 ---
 
-## Documentation Navigation
+## Documentation Directory
 
-| Section | Focus Area | Key Highlights |
+| Document | Primary Topic | What You Will Find |
 | :--- | :--- | :--- |
-| **[Getting Started](Getting-Started)** | Installation & Workflows | 5-minute setup, workspace diagnosis, CLI commands, and lockfiles. |
-| **[Architecture & Design](Architecture-and-Design)** | System Internals | AST parsers, detection pipeline, token estimators, and MCP server architecture. |
-| **[Security Rules & Hardening](Security-Rules-and-Hardening)** | Vulnerability Engine | Full specification of rules SEC-001 through SEC-011 and quality audits QUAL-001 through QUAL-009. |
-| **[Token Profiling & Budgets](Token-Profiler-and-Progressive-Disclosure)** | Context Optimization | Startup pointer versus on-demand body analysis, automated refactoring, and context linter. |
-| **[Built-in Skills Catalog](Built-in-Skills-Catalog)** | Standard Library | 29 battle-tested zero-slop skills spanning security, debugging, and context efficiency. |
-| **[Roadmap & Project Status](Roadmap-and-Status)** | Releases & Future Goals | Current production status, v0.2.0 features, and planned v0.3.0 / v1.0.0 milestones. |
-| **[Troubleshooting & FAQ](Troubleshooting-and-FAQ)** | Debugging & Recipes | Resolving lockfile drift, handling audit edge cases, and CI/CD SARIF export. |
+| [Getting Started](Getting-Started) | Setup and CLI basics | 5-minute workspace setup, CLI cheatsheet, doctor checks, and lockfiles. |
+| [Architecture and Design](Architecture-and-Design) | Internal engine | AST parsing, token estimator mathematics, adapter system, and native MCP server. |
+| [Security Rules and Hardening](Security-Rules-and-Hardening) | Vulnerability scanner | Complete reference for SEC-001 through SEC-017, MCP audit rules, and sandbox execution harness. |
+| [Token Profiler and Budgets](Token-Profiler-and-Progressive-Disclosure) | Context efficiency | Startup pointer vs on-demand body analysis, automated refactoring, and context file linter. |
+| [Built-in Skills Catalog](Built-in-Skills-Catalog) | Standard library | Full breakdown of all 37 built-in skills spanning security, debugging, and multi-agent coordination. |
+| [Cryptographic Attestation](Cryptographic-Attestation-and-Signing) | Supply chain verification | HMAC-SHA256 release signing, key generation, and tamper detection for packages and lockfiles. |
+| [Language Server Protocol](Language-Server-Protocol-LSP) | Real-time IDE integration | Setting up the LSP daemon in Cursor, VS Code, and Neovim for live linting and completions. |
+| [Remote Registry and Crawler](Remote-Registry-and-Crawler) | Discovery and auto-audit | Querying remote catalogs, indexing git repositories, and automatic security gate enforcement. |
+| [Terminal User Interface](Terminal-User-Interface-TUI) | Interactive dashboard | Live context token allocation graphs, security grade cards, and adapter state monitoring. |
+| [Roadmap and Status](Roadmap-and-Status) | Milestones and changelog | Current version status (v0.4.2), delivered v0.2.0 and v0.3.0 features, and future v1.0.0 goals. |
+| [Troubleshooting and FAQ](Troubleshooting-and-FAQ) | Operational support | Resolving lockfile drift, handling audit edge cases, and exporting SARIF reports to GitHub Actions. |
 
 ---
 
 ## Why SkillForge Exists
 
-As coding agents shift from static prompt files to executable skills (`SKILL.md`), development teams encounter two critical failure modes:
+As coding assistants transition from static prompt files to executable skills (`SKILL.md`), development teams face two recurring engineering challenges:
 
-1. **Supply-Chain Security Vulnerabilities:** Community skills are plain markdown files that instruct agents to run shell commands and scripts. Unverified skills can hide prompt injection payloads, zero-width bidirectional unicode overrides, or silent credential harvesting scripts (`~/.ssh`, `~/.aws/credentials`).
-2. **Context Window Token Burn:** Skills load their name and description into the system prompt on every conversational turn. Unoptimized skills waste hundreds of tokens before the agent even starts reasoning, increasing operational API cost and degrading model attention.
+1. **Supply Chain Security Risks:** Community skills are plain markdown files that instruct agents to run shell commands and scripts. Unreviewed skills can execute prompt injection attacks, hide zero-width unicode characters, or exfiltrate local developer credentials from `~/.ssh` or `~/.aws/credentials`.
+2. **Context Window Token Burn:** Skills load their name and description into the system prompt on every conversational turn. Bloated skills consume hundreds of tokens before the agent starts processing, driving up operational API costs and degrading model reasoning performance.
 
-SkillForge addresses both challenges deterministically with 100% offline static analysis, AST taint verification, and context window budget profiling.
+SkillForge tackles both issues deterministically using local static analysis, Python AST taint flow verification, isolated sandbox execution, and context budget profiling.
 
 ---
 
-## System Overview
+## Architecture Flow
 
 ```mermaid
 flowchart TD
-    A["Skill Package (SKILL.md + scripts/ + references/)"] --> B["SkillForge Parser"]
-    B --> C["Security Auditor (SEC-001..SEC-011)"]
+    A["Skill Package (SKILL.md + scripts/ + references/)"] --> B["SkillForge Core Parser"]
+    B --> C["Security Auditor (SEC-001 to SEC-017 + MCP Rules)"]
     B --> D["Token Profiler (Startup vs On-Demand)"]
-    B --> E["Quality Linter (QUAL-001..QUAL-009)"]
+    B --> E["Context Linter (AGENTS.md, CLAUDE.md)"]
     
     C --> F{"Audit Pass?"}
-    F -- "Violations Found" --> G["Report & SARIF v2.1.0 (Block CI/CD)"]
-    F -- "Clean" --> H["Lockfile & Fingerprint (SHA-256 + Git SHA)"]
+    F -->|Violations Found| G["Terminal Report & SARIF v2.1.0 Export"]
+    F -->|Clean| H["Lockfile & Fingerprint (SHA-256 + Git Commit)"]
     
     H --> I["Universal Adapter Dispatcher"]
     I --> J["Claude Code (.claude/skills)"]
     I --> K["Cursor (.cursor/skills)"]
     I --> L["Google Antigravity (.gemini/config/skills)"]
-    I --> M["Windsurf / Cline / Copilot"]
+    I --> M["Windsurf, Cline, Codex, Copilot"]
 ```
 
 ---
 
-## Quick Reference Links
+## External Resources
 
-- **Main Source Repository:** [github.com/gintingism/skillforge](https://github.com/gintingism/skillforge)
-- **PyPI Release:** [pypi.org/project/agent-skillforge](https://pypi.org/project/agent-skillforge/)
-- **HOL Registry Listing:** [hol.org/registry/plugins/gintingism/skillforge](https://hol.org/registry/plugins/gintingism%2Fskillforge)
-- **Security Policy:** [SECURITY.md](https://github.com/gintingism/skillforge/blob/main/SECURITY.md)
+* Main Source Repository: [github.com/gintingism/skillforge](https://github.com/gintingism/skillforge)
+* PyPI Release: [pypi.org/project/agent-skillforge](https://pypi.org/project/agent-skillforge/)
+* HOL Registry Listing: [hol.org/registry/plugins/gintingism/skillforge](https://hol.org/registry/plugins/gintingism%2Fskillforge)
+* Security Disclosure Policy: [SECURITY.md](https://github.com/gintingism/skillforge/blob/main/SECURITY.md)
