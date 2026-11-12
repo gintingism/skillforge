@@ -41,7 +41,7 @@ Press `Ctrl+C` to exit watch mode.
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ SKILLFORGE v0.4.2  :  Universal Agent Skill Manager & Security Sentinel     │
+│ SKILLFORGE v0.5.0  :  Universal Agent Skill Manager & Security Sentinel     │
 │ Workspace: /path/to/project                          Status: Operational    │
 └─────────────────────────────────────────────────────────────────────────────┘
 ┌─ Context Token Budget ─┐┌─ Security & Integrity ─┐┌─ Ecosystem & Adapters ──┐

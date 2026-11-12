@@ -27,7 +27,7 @@ pip install agent-skillforge
 | [Language Server Protocol](Language-Server-Protocol-LSP) | Real-time IDE integration | Setting up the LSP daemon in Cursor, VS Code, and Neovim for live linting and completions. |
 | [Remote Registry and Crawler](Remote-Registry-and-Crawler) | Discovery and auto-audit | Querying remote catalogs, indexing git repositories, and automatic security gate enforcement. |
 | [Terminal User Interface](Terminal-User-Interface-TUI) | Interactive dashboard | Live context token allocation graphs, security grade cards, and adapter state monitoring. |
-| [Roadmap and Status](Roadmap-and-Status) | Milestones and changelog | Current version status (v0.4.2), delivered v0.2.0 and v0.3.0 features, and future v1.0.0 goals. |
+| [Roadmap and Status](Roadmap-and-Status) | Milestones and changelog | Current version status (v0.5.0), delivered v0.2.0 through v0.5.0 features, and future v1.0.0 goals. |
 | [Troubleshooting and FAQ](Troubleshooting-and-FAQ) | Operational support | Resolving lockfile drift, handling audit edge cases, and exporting SARIF reports to GitHub Actions. |
 
 ---

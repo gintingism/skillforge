@@ -248,7 +248,7 @@ class RemoteIndex:
             raise RemoteIndexError(f"Index URL must use HTTP or HTTPS: {url}")
 
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "SkillForge/0.4.2"})
+            req = urllib.request.Request(url, headers={"User-Agent": "SkillForge/0.5.0"})
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
 

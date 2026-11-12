@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.0 - 2026-11-12
+
+- Added `skillforge firewall-mcp` inline zero-trust JSON-RPC security firewall and traffic inspector blocking prompt injections (`FW-001`), shell smuggling (`FW-002`), credential traversal (`FW-003`), SSRF (`FW-004`), and unauthorized tools (`FW-006`) while automatically redacting leaked secrets (`FW-005`).
+- Added `skillforge bench` multi-model semantic trigger benchmark matrix evaluating Precision, Recall, F1-Score, and False Positive Rate across `claude-sonnet-router`, `gemini-flash-router`, and `gpt-strict-router`.
+- Added `skillforge refactor-progressive` automated progressive disclosure slicer with deterministic semantic and code-block preservation verification.
+- Added `skillforge run-sandboxed` zero-trust capability jail runner blocking outbound network sockets, subprocess creation, sensitive host reads, and out-of-jail writes.
+- Added `skillforge lsp` Language Server Protocol 3.17 daemon over stdio for real-time editor diagnostics, hover token analysis, and frontmatter completions.
+- Added `skillforge keygen`, `skillforge sign`, and `skillforge verify-signature` for HMAC-SHA256 cryptographic attestation of skill packages and `skillforge.lock`.
+- Added `skillforge search-remote` and `skillforge index` for community skill discovery, repository indexing, and automatic security audit gates on `skillforge install`.
+- Added `skillforge tui` interactive Rich terminal dashboard for visual context token budget allocation and security grade reporting.
+- Added security rules `SEC-007` through `SEC-017` (Python AST taint analyzer, allowed-tools scope enforcer, persistent memory/git hook poisoning, lethal trifecta compound risk, obfuscation/hex payloads, fork bombs/resource abuse, unpinned package installs) and `skillforge audit --sandbox`.
+- Added `skillforge audit-mcp` configuration auditor (`MCP-001` through `MCP-004`) and `skillforge lint-context` instruction file linter (`CTX-001` through `CTX-004`).
+- Expanded built-in standard skill catalog to 37 production-grade skills (all scoring 100/100).
+
 ## 0.4.2 - 2026-11-02
 
 - Added OASIS SARIF v2.1.0 report generation to `skillforge audit --sarif <file.sarif>` for direct integration with GitHub Code Scanning.

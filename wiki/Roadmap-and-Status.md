@@ -6,9 +6,9 @@ This document tracks the current development status, delivered milestones, and f
 
 ## Current Project Status
 
-- **Latest Stable Version:** `v0.2.0`
+- **Latest Stable Version:** `v0.5.0`
 - **PyPI Package:** [`agent-skillforge`](https://pypi.org/project/agent-skillforge/)
-- **Release Status:** Production Ready (116 unit tests passing across Python 3.11 and 3.12).
+- **Release Status:** Production Ready (154 unit tests passing across Python 3.11 and 3.12).
 - **Standards Conformance:** Agent Plugins 1.0, Model Context Protocol (MCP), OASIS SARIF v2.1.0, and HOL Guard Supply-Chain Audit.
 
 ---
