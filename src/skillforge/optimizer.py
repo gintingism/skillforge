@@ -271,3 +271,148 @@ def optimize_skill(
         passed_audit=audit_report.passed,
         audit_findings=[f"{f.rule_id}: {f.message}" for f in audit_report.findings],
     )
+
+
+_CORE_SECTION_KEYWORDS = frozenset({
+    "overview", "when to use", "quickstart", "core workflow", "summary", "rules", "constraints"
+})
+
+
+def _extract_code_blocks(text: str) -> list[str]:
+    """Extract normalized fenced code block contents to verify zero code loss."""
+    blocks: list[str] = []
+    in_block = False
+    cur: list[str] = []
+    for line in text.splitlines():
+        if line.strip().startswith(_CODE_FENCE_PREFIXES):
+            if in_block:
+                blocks.append("\n".join(cur).strip())
+                cur = []
+                in_block = False
+            else:
+                in_block = True
+        elif in_block:
+            cur.append(line.rstrip())
+    return [b for b in blocks if b]
+
+
+def verify_semantic_preservation(original_body: str, refactored_pkg: SkillPackage) -> tuple[bool, float]:
+    """Verify that refactored skill + references preserve all code blocks and domain vocabulary."""
+    combined_after = refactored_pkg.skill.body + "\n" + "\n".join(refactored_pkg.references.values())
+
+    orig_blocks = _extract_code_blocks(original_body)
+    after_blocks = _extract_code_blocks(combined_after)
+    for b in orig_blocks:
+        if b not in after_blocks and b not in combined_after:
+            return False, 0.0
+
+    orig_words = set(re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_-]{3,}\b", original_body.lower()))
+    if not orig_words:
+        return True, 1.0
+    after_words = set(re.findall(r"\b[a-zA-Z_][a-zA-Z0-9_-]{3,}\b", combined_after.lower()))
+    preserved_ratio = len(orig_words & after_words) / len(orig_words)
+    return preserved_ratio >= 0.98, round(preserved_ratio, 4)
+
+
+def refactor_progressive_skill(
+    package_dir: Path,
+    output_dir: Path | None = None,
+    target_tokens: int = 500,
+    min_section_lines: int = 8,
+) -> dict[str, Any]:
+    """Slice a monolithic SKILL.md into progressive disclosure references with semantic verification."""
+    pkg = SkillPackage.load(package_dir)
+    orig_body = pkg.skill.body
+    orig_lines = pkg.skill.body_lines
+    orig_tokens = pkg.skill.body_tokens
+
+    preamble, sections = _split_markdown_sections(orig_body)
+    extracted_names: list[str] = []
+    updated_references = dict(pkg.references)
+    extracted_map: dict[int, str] = {}
+
+    # Identify candidate sections to extract (non-core sections first, then largest)
+    def _sort_key(item: tuple[int, dict[str, Any]]) -> tuple[int, int]:
+        idx, sec = item
+        title_lower = str(sec["title"]).lower()
+        is_core = any(k in title_lower for k in _CORE_SECTION_KEYWORDS)
+        return (0 if is_core else 1, len(str(sec["body"]).splitlines()))
+
+    ranked = sorted(enumerate(sections), key=_sort_key, reverse=True)
+
+    for idx, sec in ranked:
+        sec_lines = len(str(sec["body"]).splitlines())
+        if sec_lines < min_section_lines:
+            continue
+
+        # Check if current body is already within target_tokens
+        rem_text = preamble + "\n" + "\n".join(
+            s["body"] for i, s in enumerate(sections) if i not in extracted_map
+        )
+        if estimate_tokens(rem_text) <= target_tokens and extracted_map:
+            break
+
+        title = str(sec["title"])
+        base_slug = _slugify(title)
+        ref_filename = f"{base_slug}.md"
+        counter = 2
+        while ref_filename in updated_references:
+            ref_filename = f"{base_slug}-{counter}.md"
+            counter += 1
+
+        updated_references[ref_filename] = f"# {title}\n\n{str(sec['body']).strip()}\n"
+        extracted_names.append(f"references/{ref_filename}")
+        extracted_map[idx] = ref_filename
+
+    final_lines: list[str] = [preamble.rstrip("\r\n")]
+    for s_idx, s in enumerate(sections):
+        final_lines.append("")
+        final_lines.append(f"## {s['title']}")
+        if s_idx in extracted_map:
+            fname = extracted_map[s_idx]
+            final_lines.append(
+                f"See [references/{fname}](references/{fname}) for full specifications and examples."
+            )
+        else:
+            final_lines.append(str(s["body"]).strip())
+
+    optimized_body = "\n".join(final_lines).strip() + "\n"
+    new_skill = Skill(
+        name=pkg.skill.name,
+        description=pkg.skill.description,
+        body=optimized_body,
+        license=pkg.skill.license,
+        compatibility=pkg.skill.compatibility,
+        allowed_tools=pkg.skill.allowed_tools,
+        disable_model_invocation=pkg.skill.disable_model_invocation,
+        metadata=dict(pkg.skill.metadata),
+    )
+    refactored_pkg = SkillPackage(
+        skill=new_skill,
+        scripts=dict(pkg.scripts),
+        references=updated_references,
+        assets=dict(pkg.assets),
+        source_dir=pkg.source_dir,
+    )
+
+    preserved, ratio = verify_semantic_preservation(orig_body, refactored_pkg)
+    if not preserved:
+        raise SkillForgeError(f"Semantic preservation check failed (ratio={ratio}). Aborting refactor.")
+
+    destination = output_dir or package_dir
+    refactored_pkg.save(destination)
+    audit_report = SkillAuditor().audit_package(refactored_pkg)
+
+    return {
+        "skill": pkg.skill.name,
+        "original_lines": orig_lines,
+        "optimized_lines": new_skill.body_lines,
+        "original_tokens": orig_tokens,
+        "optimized_tokens": new_skill.body_tokens,
+        "tokens_saved": max(0, orig_tokens - new_skill.body_tokens),
+        "extracted_references": extracted_names,
+        "semantic_preservation_ratio": ratio,
+        "semantic_preserved": preserved,
+        "passed_audit": audit_report.passed,
+        "saved_path": str(destination),
+    }

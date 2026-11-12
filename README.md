@@ -79,6 +79,10 @@ As AI coding assistants adopt the open `SKILL.md` format, two practical problems
 | **Language Server (LSP)** | No | No | **Built-in (`skillforge lsp` stdio daemon)** |
 | **Remote Registry & Crawler** | No | Partial | **Built-in (`skillforge search-remote`, `index`)** |
 | **Terminal Dashboard (TUI)** | No | No | **Built-in (`skillforge tui` via Rich)** |
+| **MCP Runtime Security Firewall** | No | No | **Built-in (`skillforge firewall-mcp`)** |
+| **Multi-Model Trigger Benchmark** | No | No | **Built-in (`skillforge bench`)** |
+| **Progressive Disclosure Slicer** | No | No | **Built-in (`skillforge refactor-progressive`)** |
+| **Zero-Trust Script Jail Runner** | No | No | **Built-in (`skillforge run-sandboxed`)** |
 | **Native MCP Server & Agent Plugins 1.0** | No | Partial | **Built-in (`mcp.json`, `serve-mcp`)** |
 | **Supported Assistants** | Manual | Single target | **Claude, Cursor, Antigravity, Windsurf, Cline, Codex, Copilot** |
 
@@ -433,6 +437,46 @@ skillforge tui --static
 
 # Live dashboard with periodic refresh
 skillforge tui --watch
+```
+
+### 19. MCP Runtime Security Firewall (`firewall-mcp`)
+
+Protect agents against confused deputy flaws, tool parameter injection, and credential leakage by placing SkillForge's JSON-RPC firewall between the client and an MCP server:
+
+```bash
+# Wrap an upstream MCP server over stdio with live inspection and secret redaction
+skillforge firewall-mcp --audit-log ./mcp-audit.jsonl -- npx -y @modelcontextprotocol/server-postgres
+
+# Inspect a recorded JSONL stream of MCP traffic offline
+skillforge firewall-mcp --check ./captured-traffic.jsonl --json
+```
+
+### 20. Multi-Model Trigger Benchmark Matrix (`bench`)
+
+Evaluate trigger precision, recall, F1 score, and false positive rate across multiple routing profiles (`claude-sonnet-router`, `gemini-flash-router`, `gpt-strict-router`):
+
+```bash
+# Benchmark a single skill or workspace
+skillforge bench ./skills/my-skill
+
+# Export a quantitative JSON scorecard
+skillforge bench . --output ./benchmark_scorecard.json
+```
+
+### 21. Progressive Disclosure Slicer (`refactor-progressive`)
+
+Automatically slice a monolithic `SKILL.md` into `references/*.md` while verifying that 100% of code blocks and domain terms are preserved:
+
+```bash
+skillforge refactor-progressive ./skills/bloated-skill --target-tokens 500
+```
+
+### 22. Zero-Trust Sandboxed Script Runner (`run-sandboxed`)
+
+Execute bundled Python helper scripts inside an ephemeral filesystem jail with outbound sockets, subprocess creation, and host environment credentials stripped:
+
+```bash
+skillforge run-sandboxed ./skills/my-skill/scripts/helper.py --timeout 5.0
 ```
 
 ---

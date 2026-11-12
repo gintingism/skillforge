@@ -161,3 +161,29 @@ Launch the terminal user interface dashboard:
 skillforge tui --static
 skillforge tui --watch
 ```
+
+### `skillforge firewall-mcp`
+Run the inline zero-trust MCP JSON-RPC security firewall or inspect a JSONL traffic capture:
+```bash
+skillforge firewall-mcp --audit-log ./mcp-audit.jsonl -- npx -y @modelcontextprotocol/server-postgres
+skillforge firewall-mcp --check ./captured-traffic.jsonl --json
+```
+
+### `skillforge bench [path]`
+Run the multi-model semantic trigger benchmark matrix (Precision, Recall, F1, False Positive Rate):
+```bash
+skillforge bench ./skills/my-skill
+skillforge bench . --output ./benchmark_scorecard.json
+```
+
+### `skillforge refactor-progressive <path>`
+Slice a monolithic `SKILL.md` into progressive disclosure references with semantic preservation verification:
+```bash
+skillforge refactor-progressive ./skills/bloated-skill --target-tokens 500
+```
+
+### `skillforge run-sandboxed <script>`
+Execute a bundled Python script inside an isolated zero-trust capability jail:
+```bash
+skillforge run-sandboxed ./skills/my-skill/scripts/helper.py --timeout 5.0
+```

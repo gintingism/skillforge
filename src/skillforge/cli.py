@@ -1187,6 +1187,181 @@ def tui_command(
     run_tui(project, watch=watch)
 
 
+@app.command("firewall-mcp")
+def firewall_mcp(
+    check: Path | None = typer.Option(None, "--check", "-c", help="Inspect a JSONL file of MCP JSON-RPC traffic."),
+    audit_log: Path | None = typer.Option(None, "--audit-log", "-l", help="Path to write JSONL forensic audit log."),
+    allow_tool: list[str] | None = typer.Option(None, "--allow-tool", "-a", help="Restrict allowed MCP tool names."),
+    no_redact: bool = typer.Option(False, "--no-redact", help="Disable automatic secret redaction on responses."),
+    json_output: bool = typer.Option(False, "--json", help="Emit audit summary as JSON."),
+    command: list[str] | None = typer.Argument(None, help="Upstream MCP server command and arguments to proxy."),
+) -> None:
+    """Run inline zero-trust MCP JSON-RPC security firewall or inspect a JSONL traffic capture."""
+    from skillforge.mcp_firewall import MCPFirewall
+
+    allowed_set = set(allow_tool) if allow_tool else None
+    fw = MCPFirewall(
+        allowed_tools=allowed_set,
+        audit_log_path=audit_log,
+        redact_secrets=not no_redact,
+    )
+
+    try:
+        if check is not None:
+            if not check.is_file():
+                typer.echo(f"Error: JSONL file not found: {check}", err=True)
+                raise typer.Exit(code=1)
+            lines = check.read_text(encoding="utf-8").splitlines()
+            summary = fw.audit_stream(lines)
+            if json_output:
+                typer.echo(json.dumps(summary.to_dict(), indent=2))
+            else:
+                status_str = "PASSED" if summary.passed else "BLOCKED"
+                typer.echo(
+                    f"MCP Firewall Inspection: {status_str} "
+                    f"(Total: {summary.total_messages}, Allowed: {summary.allowed_count}, "
+                    f"Redacted: {summary.redacted_count}, Blocked: {summary.blocked_count})"
+                )
+                for dec in summary.decisions:
+                    if dec.violations:
+                        for v in dec.violations:
+                            typer.echo(f"  [{dec.action}] {v.rule_id} ({v.severity}) at {v.field_path}: {v.message}")
+            if not summary.passed:
+                raise typer.Exit(code=1)
+            return
+
+        if not command:
+            typer.echo("Error: Provide either --check <jsonl_file> or an upstream MCP command to proxy.", err=True)
+            raise typer.Exit(code=1)
+
+        rc = fw.run_stdio_proxy(command)
+        raise typer.Exit(code=rc)
+    except SkillForgeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("bench")
+def bench_command(
+    path: Path = typer.Argument(Path("."), help="Path to a skill directory or collection root."),
+    evals: Path | None = typer.Option(None, "--evals", "-e", help="Custom evals.json file path."),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Save JSON benchmark scorecard to file."),
+    json_output: bool = typer.Option(False, "--json", help="Emit benchmark report as JSON."),
+) -> None:
+    """Run multi-model semantic trigger benchmark matrix (Precision, Recall, F1, FPR)."""
+    from skillforge.benchmark import run_benchmark
+
+    try:
+        packages = _discover_packages(path=path)
+        if not packages:
+            pkg_dir = path.parent if path.is_file() else path
+            packages = {pkg_dir.name: SkillPackage.load(pkg_dir)}
+
+        reports = []
+        any_failed = False
+        for _, pkg in sorted(packages.items()):
+            if pkg.source_dir is None:
+                continue
+            rep = run_benchmark(pkg.source_dir, evals_path=evals if len(packages) == 1 else None)
+            reports.append(rep)
+            if not rep.passed:
+                any_failed = True
+
+        payload = {
+            "passed": not any_failed,
+            "skill_count": len(reports),
+            "benchmarks": [r.to_dict() for r in reports],
+        }
+        if output is not None:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+        if json_output:
+            typer.echo(json.dumps(payload, indent=2))
+        else:
+            for r in reports:
+                typer.echo(r.render_text())
+                typer.echo("")
+            if output is not None:
+                typer.echo(f"Saved benchmark scorecard to {output}")
+
+        if any_failed:
+            raise typer.Exit(code=1)
+    except SkillForgeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("refactor-progressive")
+def refactor_progressive_command(
+    path: Path = typer.Argument(..., help="Path to the skill directory to slice into progressive disclosure."),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output directory (defaults to in-place)."),
+    target_tokens: int = typer.Option(500, "--target-tokens", "-t", help="Target token ceiling for SKILL.md body."),
+    min_lines: int = typer.Option(8, "--min-lines", help="Minimum section lines required for extraction."),
+    json_output: bool = typer.Option(False, "--json", help="Emit refactoring report as JSON."),
+) -> None:
+    """Slice a monolithic SKILL.md into progressive disclosure references with semantic preservation."""
+    from skillforge.optimizer import refactor_progressive_skill
+
+    try:
+        pkg_dir = path.parent if path.is_file() else path
+        res = refactor_progressive_skill(
+            pkg_dir,
+            output_dir=output,
+            target_tokens=target_tokens,
+            min_section_lines=min_lines,
+        )
+        if json_output:
+            typer.echo(json.dumps(res, indent=2))
+        else:
+            typer.echo(f"Progressive Disclosure Refactoring: {res['skill']}")
+            typer.echo(f"  Original Body:  {res['original_lines']} lines (~{res['original_tokens']} tokens)")
+            typer.echo(f"  Optimized Body: {res['optimized_lines']} lines (~{res['optimized_tokens']} tokens)")
+            typer.echo(f"  Tokens Saved:   {res['tokens_saved']} tokens")
+            typer.echo(f"  Preservation:   {res['semantic_preservation_ratio']:.1%} semantic vocabulary retained")
+            if res["extracted_references"]:
+                typer.echo("  Extracted References:")
+                for ref in res["extracted_references"]:
+                    typer.echo(f"    + {ref}")
+        if not res["passed_audit"]:
+            raise typer.Exit(code=1)
+    except SkillForgeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("run-sandboxed")
+def run_sandboxed_command(
+    script: Path = typer.Argument(..., help="Path to Python script to execute inside the capability jail."),
+    timeout: float = typer.Option(5.0, "--timeout", "-t", help="Execution timeout in seconds."),
+    json_output: bool = typer.Option(False, "--json", help="Emit execution report as JSON."),
+    args: list[str] | None = typer.Argument(None, help="Arguments passed to the script."),
+) -> None:
+    """Execute a bundled Python script inside an isolated zero-trust capability jail."""
+    from skillforge.sandbox_runner import run_in_sandbox
+
+    try:
+        res = run_in_sandbox(script, script_args=args, timeout_sec=timeout)
+        if json_output:
+            typer.echo(json.dumps(res.to_dict(), indent=2))
+        else:
+            status_str = "PASSED" if res.passed else "BLOCKED / FAILED"
+            typer.echo(
+                f"Sandbox Execution [{status_str}]: {res.script_path} "
+                f"(exit={res.exit_code}, {res.duration_ms:.1f}ms)"
+            )
+            if res.blocked_events:
+                for ev in res.blocked_events:
+                    typer.echo(f"  [BLOCKED:{ev['category']}] {ev['detail']}", err=True)
+            if res.stdout.strip():
+                typer.echo(res.stdout.rstrip())
+        if not res.passed:
+            raise typer.Exit(code=1)
+    except SkillForgeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
 if __name__ == "__main__":
     app()
 

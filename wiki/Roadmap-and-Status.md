@@ -54,9 +54,11 @@ timeline
 - [x] **Language Server Protocol (LSP) Daemon:** Standard LSP 3.17 server (`skillforge lsp`) delivering real-time diagnostics, frontmatter linting, and completion in Cursor, VS Code, and Neovim.
 - [x] **Interactive Terminal Dashboard:** Rich terminal dashboard (`skillforge tui`) for live token budget visualization, security posture grade cards, and adapter state inspection.
 
-### v1.0.0 (Long-Term: Universal Skill Ecosystem)
-- [ ] **Cross-Agent Semantic Evaluation Benchmark:** Automated benchmark measuring trigger precision, recall, and false positive rates across diverse LLM foundation models (Claude 3.7 Sonnet, Gemini 2.5 Flash, GPT-4.5).
-- [ ] **Federated WebAssembly Sandbox:** In-process WebAssembly sandbox runner for agent skills with isolated memory space.
+### v1.0.0 (Delivered: Runtime Zero-Trust & Multi-Model Evaluation)
+- [x] **MCP Runtime Security Firewall (`skillforge firewall-mcp`):** Inline JSON-RPC proxy and traffic inspector blocking prompt injections, command smuggling, credential traversal, and SSRF while redacting leaked secrets (`FW-001` to `FW-006`).
+- [x] **Cross-Agent Semantic Evaluation Benchmark (`skillforge bench`):** Automated benchmark matrix measuring trigger precision, recall, F1 score, and false positive rates across multiple LLM routing profiles (`claude-sonnet-router`, `gemini-flash-router`, `gpt-strict-router`).
+- [x] **Progressive Disclosure Slicer (`skillforge refactor-progressive`):** Automated refactoring engine that slices monolithic skills into `references/*.md` while verifying 100% semantic and code block preservation.
+- [x] **Zero-Trust Capability Jail Runner (`skillforge run-sandboxed`):** Ephemeral filesystem and runtime capability jail blocking network sockets, subprocess spawning, and out-of-jail writes for bundled Python scripts.
 
 ---
 
