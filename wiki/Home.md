@@ -23,11 +23,11 @@ pip install agent-skillforge
 | [Security Rules and Hardening](Security-Rules-and-Hardening) | Vulnerability scanner | Complete reference for SEC-001 through SEC-017, MCP audit rules, and sandbox execution harness. |
 | [Token Profiler and Budgets](Token-Profiler-and-Progressive-Disclosure) | Context efficiency | Startup pointer vs on-demand body analysis, automated refactoring, and context file linter. |
 | [Built-in Skills Catalog](Built-in-Skills-Catalog) | Standard library | Full breakdown of all 37 built-in skills spanning security, debugging, and multi-agent coordination. |
-| [Cryptographic Attestation](Cryptographic-Attestation-and-Signing) | Supply chain verification | HMAC-SHA256 release signing, key generation, and tamper detection for packages and lockfiles. |
+| [Cryptographic Attestation](Cryptographic-Attestation-and-Signing) | Supply chain verification | HMAC-SHA256 release signing, CycloneDX 1.6 AIBOM, SPDX 2.3, and SLSA v1.0 provenance. |
 | [Language Server Protocol](Language-Server-Protocol-LSP) | Real-time IDE integration | Setting up the LSP daemon in Cursor, VS Code, and Neovim for live linting and completions. |
 | [Remote Registry and Crawler](Remote-Registry-and-Crawler) | Discovery and auto-audit | Querying remote catalogs, indexing git repositories, and automatic security gate enforcement. |
 | [Terminal User Interface](Terminal-User-Interface-TUI) | Interactive dashboard | Live context token allocation graphs, security grade cards, and adapter state monitoring. |
-| [Roadmap and Status](Roadmap-and-Status) | Milestones and changelog | Current version status (v0.5.0), delivered v0.2.0 through v0.5.0 features, and future v1.0.0 goals. |
+| [Roadmap and Status](Roadmap-and-Status) | Milestones and changelog | Current version status (v0.6.0), delivered v0.2.0 through v0.6.0 features, and future v1.0.0 goals. |
 | [Troubleshooting and FAQ](Troubleshooting-and-FAQ) | Operational support | Resolving lockfile drift, handling audit edge cases, and exporting SARIF reports to GitHub Actions. |
 
 ---

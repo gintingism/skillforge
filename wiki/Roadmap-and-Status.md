@@ -6,10 +6,10 @@ This document tracks the current development status, delivered milestones, and f
 
 ## Current Project Status
 
-- **Latest Stable Version:** `v0.5.0`
+- **Latest Stable Version:** `v0.6.0`
 - **PyPI Package:** [`agent-skillforge`](https://pypi.org/project/agent-skillforge/)
-- **Release Status:** Production Ready (154 unit tests passing across Python 3.11 and 3.12).
-- **Standards Conformance:** Agent Plugins 1.0, Model Context Protocol (MCP), OASIS SARIF v2.1.0, and HOL Guard Supply-Chain Audit.
+- **Release Status:** Production Ready (160 unit tests passing across Python 3.11 and 3.12).
+- **Standards Conformance:** Agent Plugins 1.0, Model Context Protocol (MCP), OASIS SARIF v2.1.0, CycloneDX v1.6 AIBOM, SPDX v2.3, SLSA v1.0 Provenance (`in-toto` v1), and HOL Guard Supply-Chain Audit.
 
 ---
 
@@ -54,11 +54,15 @@ timeline
 - [x] **Language Server Protocol (LSP) Daemon:** Standard LSP 3.17 server (`skillforge lsp`) delivering real-time diagnostics, frontmatter linting, and completion in Cursor, VS Code, and Neovim.
 - [x] **Interactive Terminal Dashboard:** Rich terminal dashboard (`skillforge tui`) for live token budget visualization, security posture grade cards, and adapter state inspection.
 
-### v1.0.0 (Delivered: Runtime Zero-Trust & Multi-Model Evaluation)
+### v1.0.0 (Delivered: Runtime Zero-Trust, Supply-Chain Provenance & Multi-Model Evaluation)
 - [x] **MCP Runtime Security Firewall (`skillforge firewall-mcp`):** Inline JSON-RPC proxy and traffic inspector blocking prompt injections, command smuggling, credential traversal, and SSRF while redacting leaked secrets (`FW-001` to `FW-006`).
 - [x] **Cross-Agent Semantic Evaluation Benchmark (`skillforge bench`):** Automated benchmark matrix measuring trigger precision, recall, F1 score, and false positive rates across multiple LLM routing profiles (`claude-sonnet-router`, `gemini-flash-router`, `gpt-strict-router`).
 - [x] **Progressive Disclosure Slicer (`skillforge refactor-progressive`):** Automated refactoring engine that slices monolithic skills into `references/*.md` while verifying 100% semantic and code block preservation.
 - [x] **Zero-Trust Capability Jail Runner (`skillforge run-sandboxed`):** Ephemeral filesystem and runtime capability jail blocking network sockets, subprocess spawning, and out-of-jail writes for bundled Python scripts.
+- [x] **CycloneDX v1.6 AIBOM & SPDX v2.3 Generator (`skillforge sbom`):** Automated Software Bill of Materials inventorying active skills, SHA-256 digests, token budgets, MCP servers, and security vulnerabilities.
+- [x] **SLSA v1.0 Provenance & in-toto Attestation (`skillforge provenance`, `verify-provenance`):** Tamper-evident `in-toto` v1 statements recording per-file SHA-256 subjects, builder metadata, and HMAC-SHA256 signatures.
+- [x] **Skill Dependency Graph & Topological Resolver (`skillforge graph`):** Topological execution order solver detecting circular dependencies (`DEP-001`), missing skills (`DEP-002`), and `allowed-tools` privilege escalation (`DEP-003`).
+- [x] **Universal Context Rule Synchronizer (`skillforge sync-rules`):** Single-source-of-truth compiler from `AGENTS.md` to `.cursor/rules/00-core.mdc`, `CLAUDE.md`, `.cursorrules`, `.windsurfrules`, and `.clinerules` with drift and directive conflict detection (`SYNC-001`, `SYNC-002`).
 
 ---
 

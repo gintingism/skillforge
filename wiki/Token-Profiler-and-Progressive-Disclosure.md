@@ -120,3 +120,31 @@ Findings:
   [HIGH] CTX-001 (CLAUDE.md:162): Context file has 162 lines (exceeds 150-line ceiling).
   [LOW]  CTX-003 (AGENTS.md:14): Generic buzzword 'seamless' found; replace with concrete operational constraints.
 ```
+
+---
+
+## Universal Context Rule Synchronization (`sync-rules`)
+
+Keep `AGENTS.md` as the single source of truth and compile synchronized instruction files across Cursor (`.cursor/rules/00-core.mdc`), Claude Code (`CLAUDE.md`), `.cursorrules`, Windsurf (`.windsurfrules`), and Cline (`.clinerules`):
+
+```bash
+# Synchronize AGENTS.md into editor rule files
+skillforge sync-rules . -t cursor,claude,cursorrules
+
+# Verify in CI that no editor rules have drifted or introduced opposing directives
+skillforge sync-rules . -t cursor,claude,cursorrules --check
+```
+
+---
+
+## Skill Dependency Graph & Topological Load Order (`graph`)
+
+Analyze `dependencies` declared in `SKILL.md` frontmatter, compute topological load order, calculate cumulative transitive token costs, and detect circular dependencies (`DEP-001`), missing skills (`DEP-002`), or `allowed-tools` privilege escalation (`DEP-003`):
+
+```bash
+# Inspect dependency graph and topological load order
+skillforge graph ./skills
+
+# Render a Mermaid flowchart TD diagram
+skillforge graph ./skills --mermaid
+```

@@ -83,6 +83,10 @@ As AI coding assistants adopt the open `SKILL.md` format, two practical problems
 | **Multi-Model Trigger Benchmark** | No | No | **Built-in (`skillforge bench`)** |
 | **Progressive Disclosure Slicer** | No | No | **Built-in (`skillforge refactor-progressive`)** |
 | **Zero-Trust Script Jail Runner** | No | No | **Built-in (`skillforge run-sandboxed`)** |
+| **CycloneDX 1.6 AIBOM & SPDX Generator** | No | No | **Built-in (`skillforge sbom`)** |
+| **SLSA v1.0 Provenance Attestation** | No | No | **Built-in (`skillforge provenance`, `verify-provenance`)** |
+| **Skill Dependency Graph & Topological Resolver** | No | No | **Built-in (`skillforge graph`)** |
+| **Universal Context Rule Synchronizer** | No | No | **Built-in (`skillforge sync-rules`)** |
 | **Native MCP Server & Agent Plugins 1.0** | No | Partial | **Built-in (`mcp.json`, `serve-mcp`)** |
 | **Supported Assistants** | Manual | Single target | **Claude, Cursor, Antigravity, Windsurf, Cline, Codex, Copilot** |
 
@@ -477,6 +481,54 @@ Execute bundled Python helper scripts inside an ephemeral filesystem jail with o
 
 ```bash
 skillforge run-sandboxed ./skills/my-skill/scripts/helper.py --timeout 5.0
+```
+
+### 23. CycloneDX 1.6 AIBOM & SPDX Bill of Materials (`sbom`)
+
+Generate a machine-readable **CycloneDX v1.6** or **SPDX v2.3** AI Bill of Materials (AIBOM) inventorying installed skills, SHA-256 package digests, token weights, MCP servers, and security audit findings:
+
+```bash
+# Export CycloneDX v1.6 AIBOM to bom.json
+skillforge sbom . --output ./bom.json
+
+# Export SPDX v2.3 format
+skillforge sbom . --format spdx --output ./bom.spdx.json
+```
+
+### 24. SLSA v1.0 Provenance & in-toto Attestation (`provenance` & `verify-provenance`)
+
+Generate and verify tamper-evident **in-toto v1 Statements** (`https://slsa.dev/provenance/v1`) recording per-file SHA-256 subject digests, builder identity, security audit scores, and optional HMAC-SHA256 signatures:
+
+```bash
+# Generate signed SLSA v1.0 provenance attestation
+skillforge provenance ./skills/my-skill --key "$SKILLFORGE_SIGNING_KEY" --signer "release-ci"
+
+# Verify provenance subjects and cryptographic signature against disk
+skillforge verify-provenance ./skills/my-skill --key "$SKILLFORGE_SIGNING_KEY"
+```
+
+### 25. Skill Dependency Graph & Topological Resolver (`graph`)
+
+Analyze `dependencies` declared in `SKILL.md` frontmatter, compute topological load order, calculate cumulative transitive token costs, and detect circular dependencies (`DEP-001`), missing dependencies (`DEP-002`), or `allowed-tools` privilege escalation (`DEP-003`):
+
+```bash
+# Inspect dependency graph and topological load order
+skillforge graph ./skills
+
+# Export Mermaid flowchart TD diagram
+skillforge graph ./skills --mermaid
+```
+
+### 26. Universal Context Rules Synchronizer (`sync-rules`)
+
+Maintain `AGENTS.md` as your single source of truth and compile synchronized instruction files for Cursor (`.cursor/rules/00-core.mdc`), Claude Code (`CLAUDE.md`), `.cursorrules`, Windsurf (`.windsurfrules`), and Cline (`.clinerules`), or run in CI `--check` mode to catch rule drift (`SYNC-001`) and contradictory directives (`SYNC-002`):
+
+```bash
+# Synchronize AGENTS.md into Cursor, Claude, and .cursorrules
+skillforge sync-rules . --targets cursor,claude,cursorrules
+
+# Verify in CI that no editor rules have drifted or introduced opposing directives
+skillforge sync-rules . --targets cursor,claude,cursorrules --check
 ```
 
 ---

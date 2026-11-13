@@ -64,6 +64,16 @@ class Skill:
         """Line count of the skill markdown body."""
         return len(self.body.splitlines())
 
+    @property
+    def dependencies(self) -> tuple[str, ...]:
+        """Declared skill dependencies from frontmatter metadata."""
+        raw_deps = self.metadata.get("dependencies")
+        if isinstance(raw_deps, (list, tuple)):
+            return tuple(str(d).strip() for d in raw_deps if str(d).strip())
+        if isinstance(raw_deps, str) and raw_deps.strip():
+            return tuple(part.strip() for part in raw_deps.split(",") if part.strip())
+        return ()
+
     @staticmethod
     def validate_name(name: str) -> None:
         """Validate a skill name before using it as a filesystem path."""
@@ -135,6 +145,10 @@ def parse_skill(document: str) -> Skill:
     if disable_model is None:
         disable_model = raw_meta.get("disable_model_invocation", False)
     extra_metadata = raw_meta.get("metadata")
+    meta_dict = dict(extra_metadata) if isinstance(extra_metadata, dict) else {}
+    top_deps = raw_meta.get("dependencies")
+    if top_deps is not None and "dependencies" not in meta_dict:
+        meta_dict["dependencies"] = top_deps
 
     return Skill(
         name=name,
@@ -142,7 +156,7 @@ def parse_skill(document: str) -> Skill:
         body=parts[2].lstrip("\r\n"),
         license=str(license_val) if license_val is not None else None,
         compatibility=str(compatibility_val) if compatibility_val is not None else None,
-        metadata=dict(extra_metadata) if isinstance(extra_metadata, dict) else {},
+        metadata=meta_dict,
         allowed_tools=str(allowed_tools) if allowed_tools is not None else None,
         disable_model_invocation=bool(disable_model),
     )

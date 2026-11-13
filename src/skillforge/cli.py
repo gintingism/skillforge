@@ -1362,6 +1362,140 @@ def run_sandboxed_command(
         raise typer.Exit(code=1) from exc
 
 
+@app.command("sbom")
+def sbom_command(
+    path: Path = typer.Argument(Path("."), help="Project root or skill directory to inventory."),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write SBOM JSON to file (e.g. bom.json)."),
+    sbom_format: str = typer.Option("cyclonedx", "--format", "-f", help="SBOM format: 'cyclonedx' (v1.6) or 'spdx' (v2.3)."),
+    include_builtin: bool = typer.Option(False, "--include-builtin", help="Include built-in catalog skills in inventory."),
+    json_output: bool = typer.Option(False, "--json", help="Emit full SBOM JSON to stdout."),
+) -> None:
+    """Generate a CycloneDX v1.6 AIBOM or SPDX v2.3 Software Bill of Materials for agent skills and MCP servers."""
+    from skillforge.sbom import generate_sbom
+
+    try:
+        packages = _discover_packages(path=path, builtin=include_builtin)
+        report = generate_sbom(
+            packages=packages,
+            project_root=path if path.is_dir() else path.parent,
+            sbom_format=sbom_format,
+        )
+        if output is not None:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(report.to_json(indent=2), encoding="utf-8")
+
+        if json_output:
+            typer.echo(report.to_json(indent=2))
+        else:
+            typer.echo(report.render_text())
+            if output is not None:
+                typer.echo(f"\nSaved {report.format_name} SBOM to {output}")
+    except (SkillForgeError, ValueError, OSError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("provenance")
+def provenance_command(
+    path: Path = typer.Argument(..., help="Path to skill directory or SKILL.md file."),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output path (defaults to <skill>/provenance.intoto.jsonl)."),
+    key: str | None = typer.Option(None, "--key", "-k", envvar="SKILLFORGE_SIGNING_KEY", help="Optional HMAC signing key."),
+    signer_id: str = typer.Option("skillforge-attestor", "--signer", "-s", help="Attestor / signer identifier."),
+    json_output: bool = typer.Option(False, "--json", help="Emit provenance envelope JSON to stdout."),
+) -> None:
+    """Generate an in-toto v1 Statement with SLSA v1.0 Provenance attestation for a skill package."""
+    from skillforge.provenance import generate_provenance, write_provenance
+
+    try:
+        envelope = generate_provenance(path, signing_key=key, signer_id=signer_id)
+        written = write_provenance(path, envelope, output_path=output)
+        if json_output:
+            typer.echo(json.dumps(envelope, indent=2))
+        else:
+            stmt = envelope["statement"]
+            subj_count = len(stmt.get("subject", []))
+            signed_state = "signed" if envelope.get("signatures") else "unsigned"
+            typer.echo(f"Generated SLSA v1.0 provenance ({signed_state}, {subj_count} subjects) -> {written}")
+    except (SkillForgeError, OSError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("verify-provenance")
+def verify_provenance_command(
+    path: Path = typer.Argument(..., help="Path to skill directory or SKILL.md file."),
+    provenance_file: Path | None = typer.Option(None, "--provenance", "-p", help="Custom provenance file path."),
+    key: str | None = typer.Option(None, "--key", "-k", envvar="SKILLFORGE_SIGNING_KEY", help="HMAC key to verify envelope signature."),
+    json_output: bool = typer.Option(False, "--json", help="Emit verification result as JSON."),
+) -> None:
+    """Verify SLSA v1.0 provenance subject digests and optional HMAC signature against skill files on disk."""
+    from skillforge.provenance import verify_provenance
+
+    res = verify_provenance(path, provenance_path=provenance_file, signing_key=key)
+    if json_output:
+        typer.echo(json.dumps(res.to_dict(), indent=2))
+    else:
+        typer.echo(res.render_text())
+    if not res.valid:
+        raise typer.Exit(code=1)
+
+
+@app.command("graph")
+def graph_command(
+    path: Path = typer.Argument(Path("."), help="Project root or skills directory to analyze."),
+    mermaid: bool = typer.Option(False, "--mermaid", help="Output Mermaid flowchart TD diagram."),
+    include_builtin: bool = typer.Option(False, "--include-builtin", help="Include built-in catalog skills."),
+    json_output: bool = typer.Option(False, "--json", help="Emit dependency graph analysis as JSON."),
+) -> None:
+    """Analyze skill dependency graph, compute topological load order, and detect cycles or privilege escalation."""
+    from skillforge.dependency_graph import analyze_dependency_graph
+
+    try:
+        packages = _discover_packages(path=path, builtin=include_builtin)
+        report = analyze_dependency_graph(packages)
+        if json_output:
+            typer.echo(json.dumps(report.to_dict(), indent=2))
+        elif mermaid:
+            typer.echo(report.to_mermaid())
+        else:
+            typer.echo(report.render_text())
+        if not report.passed:
+            raise typer.Exit(code=1)
+    except SkillForgeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("sync-rules")
+def sync_rules_command(
+    project: Path = typer.Argument(Path("."), help="Target project root containing AGENTS.md."),
+    source: str = typer.Option("AGENTS.md", "--source", "-s", help="Source of truth instruction file name."),
+    targets: str = typer.Option("cursor,claude,cursorrules", "--targets", "-t", help="Comma-separated targets: cursor,claude,cursorrules,windsurf,cline."),
+    check: bool = typer.Option(False, "--check", help="Check for rule drift and directive conflicts without modifying files."),
+    json_output: bool = typer.Option(False, "--json", help="Emit synchronization report as JSON."),
+) -> None:
+    """Synchronize AGENTS.md into .cursor/rules/00-core.mdc, CLAUDE.md, and editor rule files, or check for drift."""
+    from skillforge.rule_sync import sync_context_rules
+
+    target_list = [t.strip().lower() for t in targets.split(",") if t.strip()]
+    try:
+        report = sync_context_rules(
+            project_root=project,
+            source_file=source,
+            targets=target_list,
+            check_only=check,
+        )
+        if json_output:
+            typer.echo(json.dumps(report.to_dict(), indent=2))
+        else:
+            typer.echo(report.render_text())
+        if not report.passed:
+            raise typer.Exit(code=1)
+    except SkillForgeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
 if __name__ == "__main__":
     app()
 

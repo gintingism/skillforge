@@ -130,3 +130,31 @@ Verification FAILED: INVALID (1 issue(s): Content modified: SKILL.md)
 ```
 
 The verification command exits with status code 1, allowing you to gate automated CI pipelines against compromised skills.
+
+---
+
+## SLSA v1.0 Provenance & in-toto Statements (`provenance`)
+
+Generate and verify formal **SLSA v1.0 Provenance** (`https://slsa.dev/provenance/v1`) wrapped inside an **in-toto v1 Statement** (`https://in-toto.io/Statement/v1`):
+
+```bash
+# Generate signed SLSA v1.0 provenance statement
+skillforge provenance ./skills/database-guard -k "$SKILLFORGE_SIGNING_KEY" -s "release-ci"
+
+# Verify subject digests and HMAC signature against disk
+skillforge verify-provenance ./skills/database-guard -k "$SKILLFORGE_SIGNING_KEY"
+```
+
+---
+
+## CycloneDX v1.6 AIBOM & SPDX v2.3 Bill of Materials (`sbom`)
+
+Export a complete **CycloneDX v1.6 AIBOM** or **SPDX v2.3** JSON document cataloging all installed agent skills, SHA-256 package hashes, token weights, MCP servers (`mcp.json`), and mapped security vulnerabilities:
+
+```bash
+# Export CycloneDX v1.6 AIBOM
+skillforge sbom . -o ./bom.json
+
+# Export SPDX v2.3 SBOM
+skillforge sbom . -f spdx -o ./bom.spdx.json
+```

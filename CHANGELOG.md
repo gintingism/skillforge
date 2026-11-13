@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0 - 2026-11-13
+
+- Added `skillforge sbom` CycloneDX v1.6 AIBOM and SPDX v2.3 Software Bill of Materials generator inventorying agent skills, SHA-256 digests, token budgets, MCP servers (`mcp.json`), and mapped security vulnerabilities.
+- Added `skillforge provenance` and `skillforge verify-provenance` generating and verifying SLSA v1.0 Provenance (`https://slsa.dev/provenance/v1`) and in-toto v1 Statements (`https://in-toto.io/Statement/v1`) with HMAC-SHA256 attestation.
+- Added `skillforge graph` skill dependency graph analyzer and topological resolver detecting circular dependencies (`DEP-001`), missing skills (`DEP-002`), and `allowed-tools` privilege escalation (`DEP-003`), plus transitive token profiling and Mermaid diagram export.
+- Added `skillforge sync-rules` universal context rule synchronizer compiling `AGENTS.md` into `.cursor/rules/00-core.mdc`, `CLAUDE.md`, `.cursorrules`, `.windsurfrules`, and `.clinerules` with CI drift detection (`SYNC-001`) and contradictory directive scanning (`SYNC-002`).
+
 ## 0.5.0 - 2026-11-12
 
 - Added `skillforge firewall-mcp` inline zero-trust JSON-RPC security firewall and traffic inspector blocking prompt injections (`FW-001`), shell smuggling (`FW-002`), credential traversal (`FW-003`), SSRF (`FW-004`), and unauthorized tools (`FW-006`) while automatically redacting leaked secrets (`FW-005`).
