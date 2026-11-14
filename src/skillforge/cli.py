@@ -65,12 +65,31 @@ def audit(
     path: Path,
     strict: bool = typer.Option(False, "--strict", help="Fail on any warning or low-severity finding."),
     sandbox: bool = typer.Option(False, "--sandbox", help="Execute bundled Python scripts inside an isolated offline sandbox harness."),
+    policy_file: Path | None = typer.Option(None, "--policy", help="Path to .skillforge-policy.yaml rule suppression and threshold file."),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
     sarif_output: Path | None = typer.Option(None, "--sarif", help="Emit OASIS SARIF v2.1.0 report for GitHub Code Scanning."),
 ) -> None:
     """Audit a skill for prompt injection, zero-width unicode, and security issues."""
+    from .policy import SecurityPolicy, apply_policy
+
     try:
         report = audit_path(path, sandbox=sandbox)
+        if policy_file is not None:
+            loaded_policy = SecurityPolicy.load(policy_file)
+            eval_res = apply_policy(report, loaded_policy)
+            active_report = eval_res.report
+            if sarif_output:
+                sarif_output.parent.mkdir(parents=True, exist_ok=True)
+                sarif_output.write_text(json.dumps(active_report.to_sarif(), indent=2), encoding="utf-8")
+                if not json_output:
+                    typer.echo(f"Wrote SARIF report to {sarif_output}")
+            if json_output:
+                typer.echo(json.dumps(eval_res.to_dict()))
+            else:
+                typer.echo(eval_res.render_text())
+            if not eval_res.passed or (strict and active_report.findings):
+                raise typer.Exit(code=1)
+            return
     except (SkillForgeError, OSError) as exc:
         if json_output:
             typer.echo(json.dumps({"passed": False, "error": str(exc)}))
@@ -1494,6 +1513,197 @@ def sync_rules_command(
     except SkillForgeError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
+
+
+@app.command("policy")
+def policy_command(
+    path: Path = typer.Argument(Path(".skillforge-policy.yaml"), help="Path to policy YAML file."),
+    init: bool = typer.Option(False, "--init", help="Create a starter .skillforge-policy.yaml file."),
+    check: bool = typer.Option(False, "--check", help="Validate syntax, severity overrides, and expiration dates."),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+) -> None:
+    """Create or validate a .skillforge-policy.yaml security policy file."""
+    from .policy import SecurityPolicy
+
+    try:
+        if init:
+            if path.exists():
+                typer.echo(f"Policy file already exists: {path}", err=True)
+                raise typer.Exit(code=1)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(SecurityPolicy.default_template(), encoding="utf-8")
+            if json_output:
+                typer.echo(json.dumps({"created": str(path)}))
+            else:
+                typer.echo(f"Created starter security policy at {path}")
+            return
+
+        loaded = SecurityPolicy.load(path)
+        expired = [s.rule_id for s in loaded.suppressions if s.is_expired()]
+        payload = {
+            "valid": True,
+            "path": str(path),
+            "min_score": loaded.min_score,
+            "disable_rules": sorted(loaded.disable_rules),
+            "severity_overrides": {k: v.value for k, v in loaded.severity_overrides.items()},
+            "suppressions_count": len(loaded.suppressions),
+            "expired_suppressions": expired,
+        }
+        if json_output:
+            typer.echo(json.dumps(payload, indent=2))
+        else:
+            typer.echo(
+                f"Policy valid: {path} (min_score={loaded.min_score}, "
+                f"suppressions={len(loaded.suppressions)}, expired={len(expired)})"
+            )
+        if check and expired:
+            raise typer.Exit(code=1)
+    except (SkillForgeError, OSError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"valid": False, "error": str(exc)}))
+        else:
+            typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("scan-all")
+def scan_all_command(
+    path: Path = typer.Argument(Path("."), help="Workspace root directory to sweep."),
+    home: bool = typer.Option(False, "--home", help="Include standard user home IDE directories (~/.claude, ~/.cursor, ~/.gemini, ~/.windsurf)."),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON report."),
+    sarif_output: Path | None = typer.Option(None, "--sarif", help="Write consolidated OASIS SARIF v2.1.0 report."),
+) -> None:
+    """Sweep project and local IDE directories for all skills and MCP configurations."""
+    from .scanner_sweep import run_machine_sweep
+
+    report = run_machine_sweep(project_root=path, include_home=home)
+    if sarif_output is not None:
+        sarif_output.parent.mkdir(parents=True, exist_ok=True)
+        sarif_output.write_text(json.dumps(report.to_sarif(), indent=2), encoding="utf-8")
+        if not json_output:
+            typer.echo(f"Wrote SARIF sweep report to {sarif_output}")
+
+    if json_output:
+        typer.echo(json.dumps(report.to_dict(), indent=2))
+    else:
+        typer.echo(report.render_text())
+    if not report.passed:
+        raise typer.Exit(code=1)
+
+
+@app.command("check")
+def check_command(
+    project: Path = typer.Option(Path("."), "--project", "-p", help="Target project root containing skillforge.lock."),
+    global_scope: bool = typer.Option(False, "--global", "-g", help="Discover globally installed skills."),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+) -> None:
+    """Check installed skills in skillforge.lock for upstream updates or local drift."""
+    from .lifecycle import check_lockfile_updates
+
+    try:
+        installed = _discover_packages(project, global_scope=global_scope)
+        report = check_lockfile_updates(project_root=project, installed_packages=installed)
+        if json_output:
+            typer.echo(json.dumps(report.to_dict(), indent=2))
+        else:
+            typer.echo(report.render_text())
+        if report.updates_available > 0 or report.drift_count > 0:
+            raise typer.Exit(code=1)
+    except SkillForgeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("update")
+def update_command(
+    skills: list[str] | None = typer.Argument(None, help="Optional skill names to update (defaults to all in lockfile)."),
+    project: Path = typer.Option(Path("."), "--project", "-p", help="Target project root containing skillforge.lock."),
+    min_score: int = typer.Option(80, "--min-score", help="Minimum security audit score required to accept an update."),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+) -> None:
+    """Fetch, security-audit, and update locked skills recorded in skillforge.lock."""
+    from .lifecycle import update_locked_skills
+
+    try:
+        result = update_locked_skills(
+            project_root=project,
+            skill_names=skills,
+            min_score=min_score,
+        )
+        if json_output:
+            typer.echo(json.dumps(result, indent=2))
+        else:
+            typer.echo(
+                f"SkillForge Update: {len(result['updated'])} updated, "
+                f"{len(result['skipped'])} up-to-date, {len(result['blocked'])} blocked by security gate"
+            )
+            for item in result["updated"]:
+                typer.echo(f"  [UPDATED] {item['name']} (score: {item['audit_score']}/100)")
+            for item in result["blocked"]:
+                typer.echo(
+                    f"  [BLOCKED] {item['name']} failed audit gate (score={item['score']}, findings={item['findings']})",
+                    err=True,
+                )
+        if not result["passed"]:
+            raise typer.Exit(code=1)
+    except SkillForgeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("migrate-lock")
+def migrate_lock_command(
+    source: Path = typer.Argument(Path("skills-lock.json"), help="Path to vercel-labs/skills lockfile (skills-lock.json)."),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Destination path (defaults to skillforge.lock)."),
+    project: Path = typer.Option(Path("."), "--project", "-p", help="Project root for computing SHA-256 of installed skills."),
+    json_output: bool = typer.Option(False, "--json", help="Emit migration summary as JSON."),
+) -> None:
+    """Convert a vercel-labs/skills skills-lock.json file into skillforge.lock."""
+    from .lifecycle import migrate_vercel_lockfile
+
+    try:
+        installed = _discover_packages(project)
+        summary = migrate_vercel_lockfile(
+            source_lock=source,
+            output_lock=output,
+            installed_packages=installed,
+        )
+        if json_output:
+            typer.echo(json.dumps(summary, indent=2))
+        else:
+            typer.echo(
+                f"Migrated {summary['migrated_count']} skill(s) from {summary['source']} -> {summary['output']}"
+            )
+    except SkillForgeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("telemetry")
+def telemetry_command(
+    project: Path = typer.Argument(Path("."), help="Target project root."),
+    clear: bool = typer.Option(False, "--clear", help="Clear local telemetry ledger."),
+    json_output: bool = typer.Option(False, "--json", help="Emit telemetry summary as JSON."),
+) -> None:
+    """Inspect local offline skill usage ledger and identify unused pointer-token waste."""
+    from .telemetry import render_telemetry_report, resolve_telemetry_path, summarize_telemetry
+
+    log_path = resolve_telemetry_path(project)
+    if clear:
+        if log_path.is_file():
+            log_path.unlink()
+        if json_output:
+            typer.echo(json.dumps({"cleared": str(log_path)}))
+        else:
+            typer.echo(f"Cleared local telemetry log: {log_path}")
+        return
+
+    installed = _discover_packages(project)
+    summary = summarize_telemetry(log_path, installed_packages=installed)
+    if json_output:
+        typer.echo(json.dumps(summary, indent=2))
+    else:
+        typer.echo(render_telemetry_report(summary))
 
 
 if __name__ == "__main__":

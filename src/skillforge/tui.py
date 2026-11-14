@@ -46,7 +46,7 @@ def render_dashboard(project_dir: Path, console: Console | None = None) -> Layou
     # 1. Header
     header_text = Text()
     header_text.append("SKILLFORGE ", style="bold cyan")
-    header_text.append("v0.6.0", style="bold green")
+    header_text.append("v0.7.0", style="bold green")
     header_text.append("  :  Universal Agent Skill Manager & Security Sentinel\n", style="white")
     header_text.append(f"Workspace: {project_dir.resolve()}  ", style="dim")
     header_text.append("Status: Operational", style="bold green")

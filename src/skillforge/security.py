@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import os
 import re
 import subprocess
@@ -138,6 +139,9 @@ class AuditReport:
             "MCP-002": ("Shell Wrapper in MCP Command", "Detects arbitrary shell execution wrappers (bash, sh, powershell) in MCP server command fields."),
             "MCP-003": ("Unpinned Package in MCP Invocation", "Detects unpinned npx or uvx server launches without exact version tags in MCP args."),
             "MCP-004": ("Overbroad Filesystem Root Scope", "Detects whole-filesystem or user-root directory access grants in MCP server arguments."),
+            "MCP-005": ("MCP Tool Poisoning Directive", "Detects hidden prompt injection, secret harvesting, or stealth instructions embedded inside MCP tool descriptions or schemas."),
+            "MCP-006": ("MCP Cross-Server Tool Shadowing", "Detects duplicate tool names declared across multiple MCP servers or shadowing built-in agent tools."),
+            "MCP-007": ("MCP Cross-Server Toxic Flow", "Detects toxic multi-server combinations uniting untrusted external ingestion, sensitive local data access, and external network egress."),
             "QUAL-008": ("Metadata Value Types", "Checks that metadata maps string keys to string values as the agentskills.io spec requires."),
             "QUAL-001": ("Trigger Quality", "Checks whether skill descriptions include explicit activation conditions."),
             "QUAL-002": ("Directory Alignment", "Checks whether directory name matches frontmatter name."),
@@ -1349,6 +1353,18 @@ def audit_mcp_config(path: Path) -> AuditReport:
     findings: list[AuditFinding] = []
     dangerous_shells = frozenset({"bash", "sh", "cmd", "cmd.exe", "powershell", "pwsh"})
     root_paths = frozenset({"/", "\\", "c:\\", "c:/", "~", "$home"})
+    protected_builtin_tools = frozenset({"bash", "read_file", "write_file", "edit_file", "execute_command"})
+    poisoning_markers = re.compile(
+        r"(?i)(<\s*IMPORTANT\b|do\s+not\s+mention|without\s+telling\s+the\s+user|"
+        r"silently\s+(?:read|send|exfiltrate|forward)|~/.cursor/mcp\.json|~/.ssh|~/.aws)"
+    )
+
+    tool_registry: dict[str, list[str]] = {}
+    server_capabilities: dict[str, set[str]] = {}
+
+    untrusted_keywords = ("github", "fetch", "puppeteer", "playwright", "browser", "slack", "web", "http", "scrape")
+    sensitive_keywords = ("filesystem", "postgres", "sqlite", "mysql", "database", "db", "git", "env", "secret", "aws", "ssh")
+    egress_keywords = ("fetch", "webhook", "http", "curl", "slack", "email", "smtp", "post", "request")
 
     for s_name, s_cfg in sorted(servers.items()):
         s_file = f"{target_name}::{s_name}"
@@ -1364,6 +1380,79 @@ def audit_mcp_config(path: Path) -> AuditReport:
         env_map = (
             s_cfg.get("env", {}) if isinstance(s_cfg.get("env"), dict) else {}
         )
+
+        # Classify server capabilities for cross-server toxic flow analysis
+        combined_text = " ".join([s_name, cmd, *args, str(s_cfg.get("description", ""))]).lower()
+        tools_list = s_cfg.get("tools", [])
+        if isinstance(tools_list, list):
+            for t in tools_list:
+                if isinstance(t, dict):
+                    combined_text += " " + str(t.get("name", "")) + " " + str(t.get("description", ""))
+
+        caps: set[str] = set()
+        if any(k in combined_text for k in untrusted_keywords):
+            caps.add("untrusted_ingestion")
+        if any(k in combined_text for k in sensitive_keywords):
+            caps.add("sensitive_access")
+        if any(k in combined_text for k in egress_keywords):
+            caps.add("external_egress")
+        server_capabilities[s_name] = caps
+
+        # MCP-005: Tool poisoning in server description or embedded tool schemas
+        server_desc = str(s_cfg.get("description", ""))
+        if server_desc:
+            if _INVISIBLE_UNICODE_CHARS.search(server_desc) or poisoning_markers.search(server_desc):
+                findings.append(
+                    AuditFinding(
+                        rule_id="MCP-005",
+                        severity=Severity.CRITICAL,
+                        message=f"Tool poisoning directive detected in server '{s_name}' description",
+                        file=s_file,
+                        snippet=server_desc[:80],
+                    )
+                )
+
+        if isinstance(tools_list, list):
+            for tool_item in tools_list:
+                if not isinstance(tool_item, dict):
+                    continue
+                t_name = str(tool_item.get("name", "")).strip()
+                t_desc = str(tool_item.get("description", ""))
+                t_schema = json.dumps(tool_item.get("inputSchema", {})) if tool_item.get("inputSchema") else ""
+                inspect_blob = f"{t_desc} {t_schema}"
+
+                poisoned = False
+                if _INVISIBLE_UNICODE_CHARS.search(inspect_blob) or poisoning_markers.search(inspect_blob):
+                    poisoned = True
+                else:
+                    for _, inj_pat in _INJECTION_PATTERNS:
+                        if inj_pat.search(inspect_blob):
+                            poisoned = True
+                            break
+                if poisoned:
+                    findings.append(
+                        AuditFinding(
+                            rule_id="MCP-005",
+                            severity=Severity.CRITICAL,
+                            message=f"Tool poisoning payload detected in tool '{t_name or 'unnamed'}' on server '{s_name}'",
+                            file=s_file,
+                            snippet=t_desc[:80] if t_desc else t_schema[:80],
+                        )
+                    )
+
+                if t_name:
+                    t_norm = t_name.lower()
+                    tool_registry.setdefault(t_norm, []).append(s_name)
+                    if t_norm in protected_builtin_tools:
+                        findings.append(
+                            AuditFinding(
+                                rule_id="MCP-006",
+                                severity=Severity.HIGH,
+                                message=f"Tool shadowing risk: server '{s_name}' overrides built-in tool name '{t_name}'",
+                                file=s_file,
+                                snippet=f"tool: {t_name}",
+                            )
+                        )
 
         # MCP-001: Plaintext secrets in env
         for env_k, env_v in env_map.items():
@@ -1454,5 +1543,41 @@ def audit_mcp_config(path: Path) -> AuditReport:
                     )
                 )
                 break
+
+    # MCP-006: Duplicate tool names across different MCP servers
+    for tool_name, owners in sorted(tool_registry.items()):
+        unique_owners = sorted(set(owners))
+        if len(unique_owners) > 1:
+            findings.append(
+                AuditFinding(
+                    rule_id="MCP-006",
+                    severity=Severity.HIGH,
+                    message=(
+                        f"Cross-server tool shadowing: tool '{tool_name}' is declared by multiple "
+                        f"servers ({', '.join(unique_owners)})"
+                    ),
+                    file=target_name,
+                    snippet=f"tool '{tool_name}': {', '.join(unique_owners)}",
+                )
+            )
+
+    # MCP-007: Cross-server toxic flow uniting untrusted ingestion + sensitive access + external egress
+    if len(server_capabilities) >= 2:
+        union_caps: set[str] = set()
+        for caps in server_capabilities.values():
+            union_caps.update(caps)
+        if {"untrusted_ingestion", "sensitive_access", "external_egress"}.issubset(union_caps):
+            findings.append(
+                AuditFinding(
+                    rule_id="MCP-007",
+                    severity=Severity.HIGH,
+                    message=(
+                        "Cross-server toxic flow detected: combined MCP servers unite untrusted external "
+                        "ingestion, sensitive local/database access, and external egress channels"
+                    ),
+                    file=target_name,
+                    snippet=f"servers: {', '.join(sorted(server_capabilities))}",
+                )
+            )
 
     return AuditReport(target=target_name, findings=findings)

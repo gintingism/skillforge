@@ -7,7 +7,7 @@
   },
   "metadata": {
     "description": "Universal package manager, security auditor, and context token profiler for portable AI agent skills.",
-    "version": "0.6.0"
+    "version": "0.7.0"
   },
   "plugins": [
     {
@@ -22,7 +22,7 @@
       },
       "category": "Development & Workflow",
       "description": "Universal package manager, security auditor, and context token profiler for portable agent skills (SKILL.md).",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "skills": [
         "./src/skillforge/builtin_skills/agent-observability",
         "./src/skillforge/builtin_skills/antislop-code",

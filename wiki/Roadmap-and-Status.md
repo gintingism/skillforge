@@ -6,9 +6,9 @@ This document tracks the current development status, delivered milestones, and f
 
 ## Current Project Status
 
-- **Latest Stable Version:** `v0.6.0`
+- **Latest Stable Version:** `v0.7.0`
 - **PyPI Package:** [`agent-skillforge`](https://pypi.org/project/agent-skillforge/)
-- **Release Status:** Production Ready (160 unit tests passing across Python 3.11 and 3.12).
+- **Release Status:** Production Ready (166 unit tests passing across Python 3.11 and 3.12).
 - **Standards Conformance:** Agent Plugins 1.0, Model Context Protocol (MCP), OASIS SARIF v2.1.0, CycloneDX v1.6 AIBOM, SPDX v2.3, SLSA v1.0 Provenance (`in-toto` v1), and HOL Guard Supply-Chain Audit.
 
 ---
@@ -63,6 +63,10 @@ timeline
 - [x] **SLSA v1.0 Provenance & in-toto Attestation (`skillforge provenance`, `verify-provenance`):** Tamper-evident `in-toto` v1 statements recording per-file SHA-256 subjects, builder metadata, and HMAC-SHA256 signatures.
 - [x] **Skill Dependency Graph & Topological Resolver (`skillforge graph`):** Topological execution order solver detecting circular dependencies (`DEP-001`), missing skills (`DEP-002`), and `allowed-tools` privilege escalation (`DEP-003`).
 - [x] **Universal Context Rule Synchronizer (`skillforge sync-rules`):** Single-source-of-truth compiler from `AGENTS.md` to `.cursor/rules/00-core.mdc`, `CLAUDE.md`, `.cursorrules`, `.windsurfrules`, and `.clinerules` with drift and directive conflict detection (`SYNC-001`, `SYNC-002`).
+- [x] **Policy-as-Code & Expiring Suppressions (`skillforge policy`, `audit --policy`):** Declarative `.skillforge-policy.yaml` rules supporting minimum score gates, severity overrides, and scoped suppressions with mandatory reasons and expiration dates.
+- [x] **MCP Tool Poisoning, Shadowing & Machine Sweep (`MCP-005` to `MCP-007`, `scan-all`):** Deep inspection of MCP tool descriptions/schemas for poisoning and shadowing, cross-server toxic flow analysis, and workspace/home auto-discovery sweeps.
+- [x] **Lifecycle Updates & Lockfile Interop (`check`, `update`, `migrate-lock`):** Upstream lockfile update verification, security-gated upgrades, and `vercel-labs/skills` (`skills-lock.json`) migration.
+- [x] **Local Offline Usage Telemetry (`skillforge telemetry`):** Zero-network local JSONL usage ledger tracking MCP tool invocations, token loads, and unused startup pointer overhead (honors `DO_NOT_TRACK=1`).
 
 ---
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0 - 2026-11-14
+
+- Added `skillforge policy` (`--init`, `--check`) and `skillforge audit --policy` supporting `.skillforge-policy.yaml` rule disablement, severity overrides, minimum score thresholds, and scoped suppressions with mandatory reasons and expiration dates.
+- Extended `skillforge audit-mcp` with `MCP-005` (MCP tool poisoning detection in tool descriptions and schemas), `MCP-006` (cross-server and built-in tool shadowing), and `MCP-007` (cross-server toxic flow detection across untrusted ingestion, sensitive access, and external egress).
+- Added `skillforge scan-all` for workspace and optional `--home` machine-wide auto-discovery across IDE skills and MCP config files with consolidated JSON and SARIF v2.1.0 output.
+- Added `skillforge check`, `skillforge update`, and `skillforge migrate-lock` for upstream lockfile update checks, security-gated upgrades, and `vercel-labs/skills` (`skills-lock.json`) migration.
+- Added `skillforge telemetry` offline JSONL usage ledger wired into `serve-mcp` (`get_skill`, `get_skill_resource`) to surface invocation counts, loaded token spend, and unused startup pointer overhead while honoring `DO_NOT_TRACK=1`.
+
 ## 0.6.0 - 2026-11-13
 
 - Added `skillforge sbom` CycloneDX v1.6 AIBOM and SPDX v2.3 Software Bill of Materials generator inventorying agent skills, SHA-256 digests, token budgets, MCP servers (`mcp.json`), and mapped security vulnerabilities.

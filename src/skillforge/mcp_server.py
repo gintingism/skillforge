@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
@@ -14,7 +15,8 @@ from mcp.types import ToolAnnotations
 from .errors import SkillForgeError
 from .registry import BuiltinRegistry, CompositeRegistry, LocalRegistry, Registry
 from .security import SkillAuditor
-from .skill import parse_skill
+from .skill import estimate_tokens, parse_skill
+from .telemetry import record_telemetry_event
 
 LOGGER = logging.getLogger("skillforge.mcp")
 if not LOGGER.handlers:
@@ -57,33 +59,49 @@ def create_mcp_server(registry: Registry) -> MCPServer:
     @server.tool(name="get_skill", annotations=READ_ONLY)
     def get_skill(name: str) -> str:
         """Get the complete SKILL.md document for a safe skill name."""
+        started = time.perf_counter()
         try:
             document = registry.get(name).render()
-            if len(document) > CHARACTER_LIMIT:
-                return document[:CHARACTER_LIMIT] + "\n\n<!-- response truncated -->\n"
-            return document
+            result_doc = document[:CHARACTER_LIMIT] + "\n\n<!-- response truncated -->\n" if len(document) > CHARACTER_LIMIT else document
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
+            record_telemetry_event(
+                event_type="mcp.get_skill",
+                skill_name=name,
+                tokens_loaded=estimate_tokens(result_doc),
+                duration_ms=elapsed_ms,
+                status="ok",
+            )
+            return result_doc
         except SkillForgeError as exc:
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
+            record_telemetry_event(
+                event_type="mcp.get_skill",
+                skill_name=name,
+                tokens_loaded=0,
+                duration_ms=elapsed_ms,
+                status="error",
+            )
             return json.dumps({"error": str(exc)})
 
     @server.tool(name="get_skill_resource", annotations=READ_ONLY)
     def get_skill_resource(name: str, resource_path: str) -> str:
         """Read a bundled progressive-disclosure file (e.g. 'references/guide.md' or 'scripts/run.py') from a skill package."""
+        started = time.perf_counter()
         try:
             package = registry.get_package(name)
             normalized = resource_path.strip().replace("\\", "/")
             if ".." in normalized.split("/"):
                 return json.dumps({"error": "Invalid resource_path: path traversal is not allowed"})
             clean_path = normalized.removeprefix("./").lstrip("/")
+            content: str | None = None
             if clean_path.startswith("references/"):
                 rel = clean_path[len("references/") :]
                 if rel in package.references:
                     content = package.references[rel]
-                    return content[:CHARACTER_LIMIT] if len(content) > CHARACTER_LIMIT else content
             elif clean_path.startswith("scripts/"):
                 rel = clean_path[len("scripts/") :]
                 if rel in package.scripts:
                     content = package.scripts[rel]
-                    return content[:CHARACTER_LIMIT] if len(content) > CHARACTER_LIMIT else content
             elif clean_path.startswith("assets/"):
                 rel = clean_path[len("assets/") :]
                 if rel in package.assets:
@@ -91,7 +109,19 @@ def create_mcp_server(registry: Registry) -> MCPServer:
                         content = package.assets[rel].decode("utf-8")
                     except UnicodeDecodeError:
                         return json.dumps({"error": f"Asset '{resource_path}' is binary and cannot be returned as text"})
-                    return content[:CHARACTER_LIMIT] if len(content) > CHARACTER_LIMIT else content
+
+            if content is not None:
+                trimmed = content[:CHARACTER_LIMIT] if len(content) > CHARACTER_LIMIT else content
+                elapsed_ms = (time.perf_counter() - started) * 1000.0
+                record_telemetry_event(
+                    event_type="mcp.get_skill_resource",
+                    skill_name=name,
+                    tokens_loaded=estimate_tokens(trimmed),
+                    duration_ms=elapsed_ms,
+                    status="ok",
+                )
+                return trimmed
+
             return json.dumps(
                 {
                     "error": f"Resource '{resource_path}' not found in skill '{name}'",
@@ -101,6 +131,14 @@ def create_mcp_server(registry: Registry) -> MCPServer:
                 }
             )
         except SkillForgeError as exc:
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
+            record_telemetry_event(
+                event_type="mcp.get_skill_resource",
+                skill_name=name,
+                tokens_loaded=0,
+                duration_ms=elapsed_ms,
+                status="error",
+            )
             return json.dumps({"error": str(exc)})
 
     @server.tool(name="validate_skill", annotations=READ_ONLY)

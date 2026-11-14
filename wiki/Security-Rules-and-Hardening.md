@@ -4,7 +4,7 @@ This document provides the full specification for SkillForge's security and qual
 
 ---
 
-## Security Rules Matrix (SEC-001 to SEC-017, MCP-001 to MCP-004)
+## Security Rules Matrix (SEC-001 to SEC-017, MCP-001 to MCP-007)
 
 | Rule ID | Name | Severity | Attack Vector Addressed |
 | :--- | :--- | :--- | :--- |
@@ -29,6 +29,9 @@ This document provides the full specification for SkillForge's security and qual
 | **MCP-002** | MCP Shell Wrapper | HIGH | Arbitrary shell interpreter wrappers (`bash -c`, `sh -c`, `powershell`) declared in MCP server command fields. |
 | **MCP-003** | MCP Unpinned Package | MEDIUM | Unpinned package executions (`npx`, `uvx`) lacking exact `@version` tags in MCP server arguments. |
 | **MCP-004** | MCP Root Filesystem Grant | HIGH | Permissive root filesystem (`/`, `C:\`, `~`, `$HOME`) directory exposure in MCP arguments. |
+| **MCP-005** | MCP Tool Poisoning Directive | CRITICAL | Hidden prompt injection, `<IMPORTANT>` directives, or stealth credential harvesting embedded inside MCP tool descriptions or schemas. |
+| **MCP-006** | MCP Cross-Server Tool Shadowing | HIGH | Duplicate tool names declared across multiple MCP servers or overriding protected built-in tools (`bash`, `read_file`, `write_file`). |
+| **MCP-007** | MCP Cross-Server Toxic Flow | HIGH | Toxic multi-server combination uniting untrusted external ingestion, sensitive local/DB access, and external network egress in one config. |
 
 ---
 

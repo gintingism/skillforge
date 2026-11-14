@@ -87,6 +87,10 @@ As AI coding assistants adopt the open `SKILL.md` format, two practical problems
 | **SLSA v1.0 Provenance Attestation** | No | No | **Built-in (`skillforge provenance`, `verify-provenance`)** |
 | **Skill Dependency Graph & Topological Resolver** | No | No | **Built-in (`skillforge graph`)** |
 | **Universal Context Rule Synchronizer** | No | No | **Built-in (`skillforge sync-rules`)** |
+| **Policy-as-Code & Expiring Suppressions** | No | Partial | **Built-in (`skillforge policy`, `audit --policy`)** |
+| **MCP Tool Poisoning & Cross-Server Sweep** | No | Partial | **Built-in (`MCP-005` to `MCP-007`, `scan-all`)** |
+| **Lifecycle Updates & Lockfile Interop** | No | Partial | **Built-in (`check`, `update`, `migrate-lock`)** |
+| **Local Offline Usage Telemetry Ledger** | No | Telemetry | **Built-in (`skillforge telemetry`, `DO_NOT_TRACK`)** |
 | **Native MCP Server & Agent Plugins 1.0** | No | Partial | **Built-in (`mcp.json`, `serve-mcp`)** |
 | **Supported Assistants** | Manual | Single target | **Claude, Cursor, Antigravity, Windsurf, Cline, Codex, Copilot** |
 
@@ -529,6 +533,57 @@ skillforge sync-rules . --targets cursor,claude,cursorrules
 
 # Verify in CI that no editor rules have drifted or introduced opposing directives
 skillforge sync-rules . --targets cursor,claude,cursorrules --check
+```
+
+### 27. Policy-as-Code & Scoped Rule Suppression (`policy` & `audit --policy`)
+
+Define declarative `.skillforge-policy.yaml` rules with minimum audit score gates, severity overrides, and scoped suppressions that require a justification reason and optional expiration date:
+
+```bash
+# Scaffold .skillforge-policy.yaml
+skillforge policy --init
+
+# Validate syntax and fail if any suppressions have expired
+skillforge policy --check
+
+# Run audit against policy
+skillforge audit ./skills --policy .skillforge-policy.yaml
+```
+
+### 28. Machine-Wide Discovery Sweep & MCP Poisoning Checks (`scan-all`)
+
+Inspect MCP server tool schemas for hidden tool poisoning (`MCP-005`), cross-server tool shadowing (`MCP-006`), and cross-server toxic flows (`MCP-007`), or sweep an entire workspace and home IDE directories in one run:
+
+```bash
+# Sweep workspace skills and mcp.json files
+skillforge scan-all .
+
+# Include ~/.claude, ~/.cursor, ~/.gemini, ~/.windsurf, and export SARIF
+skillforge scan-all . --home --sarif sweep.sarif
+```
+
+### 29. Skill Lifecycle Updates & Lockfile Interop (`check`, `update`, `migrate-lock`)
+
+Check locked skills for upstream updates or local drift, apply audited updates that pass security gates, or convert `vercel-labs/skills` lockfiles (`skills-lock.json`) into SHA-256 verified `skillforge.lock`:
+
+```bash
+# Check locked skills for upstream updates or local drift
+skillforge check
+
+# Fetch, audit, install, and update lockfile hashes safely
+skillforge update --min-score 80
+
+# Convert skills-lock.json to skillforge.lock
+skillforge migrate-lock ./skills-lock.json
+```
+
+### 30. Local Offline Skill Usage Telemetry (`telemetry`)
+
+Track local MCP server usage (`get_skill`, `get_skill_resource`), token loading counts, and unused installed skills that consume startup pointer tokens without being invoked (100% offline, honors `DO_NOT_TRACK=1`):
+
+```bash
+# Inspect skill usage ranking and unused pointer-token waste
+skillforge telemetry
 ```
 
 ---
