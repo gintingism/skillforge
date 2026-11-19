@@ -6,10 +6,10 @@ This document tracks the current development status, delivered milestones, and f
 
 ## Current Project Status
 
-- **Latest Stable Version:** `v0.7.0`
+- **Latest Stable Version:** `v0.8.0`
 - **PyPI Package:** [`agent-skillforge`](https://pypi.org/project/agent-skillforge/)
-- **Release Status:** Production Ready (166 unit tests passing across Python 3.11 and 3.12).
-- **Standards Conformance:** Agent Plugins 1.0, Model Context Protocol (MCP), OASIS SARIF v2.1.0, CycloneDX v1.6 AIBOM, SPDX v2.3, SLSA v1.0 Provenance (`in-toto` v1), and HOL Guard Supply-Chain Audit.
+- **Release Status:** Production Ready (174 unit tests passing across Python 3.11 and 3.12).
+- **Standards Conformance:** Agent Plugins 1.0, Model Context Protocol (MCP), OASIS SARIF v2.1.0, CycloneDX v1.6 AIBOM, SPDX v2.3, SLSA v1.0 Provenance (`in-toto` v1, HMAC-SHA256 & Ed25519), and HOL Guard Supply-Chain Audit.
 
 ---
 
@@ -22,7 +22,7 @@ timeline
     v0.2.0 : Python AST taint flow (SEC-008), token budget, MCP server, SARIF
     v0.5.0 : Sandbox jail, MCP firewall, multi-model benchmark, LSP, TUI
     v0.7.0 : Policy-as-code, AIBOM/SLSA, rule sync, MCP sweep, telemetry
-    v0.8.0 (Next) : Ed25519 asymmetric signing, bwrap OS jail, OpenCode/Roo/Codex/Gemini adapters
+    v0.8.0 (Current) : Ed25519 signing & SLSA provenance, bwrap OS jail, OpenCode/Roo/Codex/Gemini adapters
 ```
 
 ### Delivered in v0.2.0 (Current Release)

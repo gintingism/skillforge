@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0 - 2026-11-18
+
+- Added asymmetric **Ed25519** keypair generation, signing, and verification across skill packages, `skillforge.lock`, and SLSA v1.0 `in-toto` provenance (`skillforge keygen --algorithm ed25519`, `skillforge sign --algorithm ed25519`, `skillforge provenance --algorithm ed25519 --key-file`, `skillforge verify-provenance --key-file`).
+- Extended `skillforge run-sandboxed` to execute `.sh`/`.bash` and `.js`/`.mjs` scripts alongside Python, with automatic Linux `bwrap` (`--unshare-net`, read-only rootfs) OS-level isolation when available.
+- Added `skillforge firewall-mcp --wrap-config <mcp.json>` to idempotently wrap stdio MCP server entries through the inline security firewall.
+- Extended `skillforge serve-mcp` with `audit_mcp_config` and `check_policy` tools plus `--transport` (`stdio`, `sse`, `streamable-http`).
+- Added ecosystem adapters for **OpenCode** (`.opencode/skills`), **Roo Code** (`.roo/skills`), **Codex CLI** (`.codex/skills`), and **Gemini CLI** (`.gemini/skills`), and added `gemini` (`GEMINI.md`) and `copilot` (`.github/copilot-instructions.md`) targets to `skillforge sync-rules`.
+- Added `.github/workflows/ci.yml` and root `.skillforge-policy.yaml` dogfooding `pytest`, `mypy`, policy-gated `skillforge audit`, `skillforge sync-rules --check`, and `skillforge lint-context` across Python 3.11 and 3.12.
+
 ## 0.7.0 - 2026-11-14
 
 - Added `skillforge policy` (`--init`, `--check`) and `skillforge audit --policy` supporting `.skillforge-policy.yaml` rule disablement, severity overrides, minimum score thresholds, and scoped suppressions with mandatory reasons and expiration dates.

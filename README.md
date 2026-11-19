@@ -8,12 +8,12 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/agent-skillforge.svg?color=blue&style=flat-square)](https://pypi.org/project/agent-skillforge/)
 [![Python versions](https://img.shields.io/pypi/pyversions/agent-skillforge.svg?style=flat-square)](https://pypi.org/project/agent-skillforge/)
-[![CI](https://img.shields.io/github/actions/workflow/status/gintingism/skillforge/publish.yml?style=flat-square)](https://github.com/gintingism/skillforge/actions)
+[![CI](https://img.shields.io/github/actions/workflow/status/gintingism/skillforge/ci.yml?style=flat-square)](https://github.com/gintingism/skillforge/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![Audited by SkillForge](https://img.shields.io/badge/Security-SkillForge%20Passed-2ea44f?logo=shield&style=flat-square)](https://github.com/gintingism/skillforge)
 [![HOL Guard](https://img.shields.io/endpoint?url=https%3A%2F%2Fhol.org%2Fapi%2Fregistry%2Fbadges%2Fplugin%3Fslug%3Dgintingism%252Fskillforge%26metric%3Drelease)](https://hol.org/registry/plugins/gintingism%2Fskillforge?utm_source=hol_marketplace&utm_medium=plugins_badge&utm_campaign=plugins&utm_content=gintingism%2Fskillforge&ref=plugin-author-78e0507b)
 
-Audit, package, test, and profile portable agent skills across Claude Code, Cursor, Google Antigravity, Windsurf, GitHub Copilot, and Cline.
+Audit, package, test, and profile portable agent skills across Claude Code, Cursor, Google Antigravity, Gemini CLI, Codex CLI, OpenCode, Windsurf, GitHub Copilot, Cline, and Roo Code.
 
 </div>
 
@@ -75,24 +75,24 @@ As AI coding assistants adopt the open `SKILL.md` format, two practical problems
 | **OpenAPI / Swagger Importer** | No | No | **Built-in (`skillforge import-openapi`)** |
 | **OASIS SARIF v2.1.0 Export** | No | No | **Built-in (`--sarif` for Code Scanning)** |
 | **Reproducible Lockfile** | No | Manifest only | **SHA-256 + Pinned Git Commit SHA** |
-| **Cryptographic Attestation** | No | No | **Built-in (`skillforge sign` / `verify-signature`)** |
+| **Cryptographic Attestation** | No | No | **HMAC-SHA256 & Ed25519 (`sign`, `verify-signature`)** |
 | **Language Server (LSP)** | No | No | **Built-in (`skillforge lsp` stdio daemon)** |
 | **Remote Registry & Crawler** | No | Partial | **Built-in (`skillforge search-remote`, `index`)** |
 | **Terminal Dashboard (TUI)** | No | No | **Built-in (`skillforge tui` via Rich)** |
-| **MCP Runtime Security Firewall** | No | No | **Built-in (`skillforge firewall-mcp`)** |
+| **MCP Runtime Security Firewall** | No | No | **Built-in (`firewall-mcp`, `--wrap-config`)** |
 | **Multi-Model Trigger Benchmark** | No | No | **Built-in (`skillforge bench`)** |
 | **Progressive Disclosure Slicer** | No | No | **Built-in (`skillforge refactor-progressive`)** |
-| **Zero-Trust Script Jail Runner** | No | No | **Built-in (`skillforge run-sandboxed`)** |
+| **Zero-Trust Script Jail Runner** | No | No | **Python/Bash/Node + `bwrap` OS jail (`run-sandboxed`)** |
 | **CycloneDX 1.6 AIBOM & SPDX Generator** | No | No | **Built-in (`skillforge sbom`)** |
-| **SLSA v1.0 Provenance Attestation** | No | No | **Built-in (`skillforge provenance`, `verify-provenance`)** |
+| **SLSA v1.0 Provenance Attestation** | No | No | **HMAC-SHA256 & Ed25519 (`provenance`, `verify-provenance`)** |
 | **Skill Dependency Graph & Topological Resolver** | No | No | **Built-in (`skillforge graph`)** |
-| **Universal Context Rule Synchronizer** | No | No | **Built-in (`skillforge sync-rules`)** |
+| **Universal Context Rule Synchronizer** | No | No | **Built-in (`skillforge sync-rules`, incl. Gemini & Copilot)** |
 | **Policy-as-Code & Expiring Suppressions** | No | Partial | **Built-in (`skillforge policy`, `audit --policy`)** |
 | **MCP Tool Poisoning & Cross-Server Sweep** | No | Partial | **Built-in (`MCP-005` to `MCP-007`, `scan-all`)** |
 | **Lifecycle Updates & Lockfile Interop** | No | Partial | **Built-in (`check`, `update`, `migrate-lock`)** |
 | **Local Offline Usage Telemetry Ledger** | No | Telemetry | **Built-in (`skillforge telemetry`, `DO_NOT_TRACK`)** |
-| **Native MCP Server & Agent Plugins 1.0** | No | Partial | **Built-in (`mcp.json`, `serve-mcp`)** |
-| **Supported Assistants** | Manual | Single target | **Claude, Cursor, Antigravity, Windsurf, Cline, Codex, Copilot** |
+| **Native MCP Server & Agent Plugins 1.0** | No | Partial | **Built-in (`serve-mcp --transport stdio|sse|streamable-http`)** |
+| **Supported Assistants** | Manual | Single target | **Claude, Cursor, Antigravity, Gemini CLI, Codex CLI, OpenCode, Windsurf, Cline, Roo Code, Copilot** |
 
 ---
 
@@ -418,21 +418,19 @@ Configure `skillforge lsp` as an LSP server in Cursor (`settings.json`), VS Code
 
 ### 17. Cryptographic signing and tamper verification (`sign` & `verify-signature`)
 
-Prevent supply chain attacks and man-in-the-middle tampering by generating HMAC-SHA256 file manifest signatures for published skills and lockfiles:
+Prevent supply chain attacks and man-in-the-middle tampering by generating **HMAC-SHA256** or asymmetric **Ed25519** file manifest signatures for published skills and lockfiles:
 
 ```bash
-# Generate a cryptographically secure 256-bit key
-skillforge keygen --out skill.key
+# Generate an asymmetric Ed25519 keypair (writes release.pem and release.pem.pub)
+skillforge keygen --algorithm ed25519 --out release.pem
 
-# Sign a skill package directory
-skillforge sign ./skills/db-migrator --key-file skill.key --signer "security-team"
+# Sign a skill package directory or lockfile with Ed25519
+skillforge sign ./skills/db-migrator --algorithm ed25519 --key-file release.pem --signer "security-team"
+skillforge sign ./skillforge.lock --algorithm ed25519 --key-file release.pem
 
-# Verify tamper-integrity across all files
-skillforge verify-signature ./skills/db-migrator --key-file skill.key
-
-# Sign and verify skillforge.lock
-skillforge sign ./skillforge.lock --key-file skill.key
-skillforge verify-signature ./skillforge.lock --key-file skill.key
+# Verify tamper-integrity with the public key
+skillforge verify-signature ./skills/db-migrator --key-file release.pem.pub
+skillforge verify-signature ./skillforge.lock --key-file release.pem.pub
 ```
 
 ### 18. Interactive Terminal Dashboard (`tui`)
@@ -452,6 +450,9 @@ skillforge tui --watch
 Protect agents against confused deputy flaws, tool parameter injection, and credential leakage by placing SkillForge's JSON-RPC firewall between the client and an MCP server:
 
 ```bash
+# Automatically wrap all stdio servers in an existing mcp.json config
+skillforge firewall-mcp --wrap-config ./mcp.json
+
 # Wrap an upstream MCP server over stdio with live inspection and secret redaction
 skillforge firewall-mcp --audit-log ./mcp-audit.jsonl -- npx -y @modelcontextprotocol/server-postgres
 
@@ -481,7 +482,7 @@ skillforge refactor-progressive ./skills/bloated-skill --target-tokens 500
 
 ### 22. Zero-Trust Sandboxed Script Runner (`run-sandboxed`)
 
-Execute bundled Python helper scripts inside an ephemeral filesystem jail with outbound sockets, subprocess creation, and host environment credentials stripped:
+Execute bundled Python (`.py`), shell (`.sh`/`.bash`), or Node.js (`.js`/`.mjs`) helper scripts inside an ephemeral filesystem jail with outbound sockets, subprocess creation, and host environment credentials stripped (automatically layered with Linux `bwrap --unshare-net` when available):
 
 ```bash
 skillforge run-sandboxed ./skills/my-skill/scripts/helper.py --timeout 5.0
@@ -501,14 +502,14 @@ skillforge sbom . --format spdx --output ./bom.spdx.json
 
 ### 24. SLSA v1.0 Provenance & in-toto Attestation (`provenance` & `verify-provenance`)
 
-Generate and verify tamper-evident **in-toto v1 Statements** (`https://slsa.dev/provenance/v1`) recording per-file SHA-256 subject digests, builder identity, security audit scores, and optional HMAC-SHA256 signatures:
+Generate and verify tamper-evident **in-toto v1 Statements** (`https://slsa.dev/provenance/v1`) recording per-file SHA-256 subject digests, builder identity, security audit scores, and optional **HMAC-SHA256** or **Ed25519** signatures:
 
 ```bash
-# Generate signed SLSA v1.0 provenance attestation
-skillforge provenance ./skills/my-skill --key "$SKILLFORGE_SIGNING_KEY" --signer "release-ci"
+# Generate Ed25519-signed SLSA v1.0 provenance attestation
+skillforge provenance ./skills/my-skill --algorithm ed25519 --key-file release.pem --signer "release-ci"
 
-# Verify provenance subjects and cryptographic signature against disk
-skillforge verify-provenance ./skills/my-skill --key "$SKILLFORGE_SIGNING_KEY"
+# Verify provenance subjects and Ed25519 signature against disk
+skillforge verify-provenance ./skills/my-skill --key-file release.pem.pub
 ```
 
 ### 25. Skill Dependency Graph & Topological Resolver (`graph`)
@@ -525,11 +526,11 @@ skillforge graph ./skills --mermaid
 
 ### 26. Universal Context Rules Synchronizer (`sync-rules`)
 
-Maintain `AGENTS.md` as your single source of truth and compile synchronized instruction files for Cursor (`.cursor/rules/00-core.mdc`), Claude Code (`CLAUDE.md`), `.cursorrules`, Windsurf (`.windsurfrules`), and Cline (`.clinerules`), or run in CI `--check` mode to catch rule drift (`SYNC-001`) and contradictory directives (`SYNC-002`):
+Maintain `AGENTS.md` as your single source of truth and compile synchronized instruction files for Cursor (`.cursor/rules/00-core.mdc`), Claude Code (`CLAUDE.md`), `.cursorrules`, Windsurf (`.windsurfrules`), Cline (`.clinerules`), Gemini CLI (`GEMINI.md`), and GitHub Copilot (`.github/copilot-instructions.md`), or run in CI `--check` mode to catch rule drift (`SYNC-001`) and contradictory directives (`SYNC-002`):
 
 ```bash
-# Synchronize AGENTS.md into Cursor, Claude, and .cursorrules
-skillforge sync-rules . --targets cursor,claude,cursorrules
+# Synchronize AGENTS.md into Cursor, Claude, Gemini, and Copilot
+skillforge sync-rules . --targets cursor,claude,cursorrules,gemini,copilot
 
 # Verify in CI that no editor rules have drifted or introduced opposing directives
 skillforge sync-rules . --targets cursor,claude,cursorrules --check
@@ -639,12 +640,14 @@ SkillForge includes a native MCP server conforming to the Agent Plugins 1.0 spec
 }
 ```
 
-Exposed MCP tools:
+Exposed MCP tools (supports `--transport stdio|sse|streamable-http`):
 - `search_skills(query, limit)`: Search local and built-in skill catalogs.
 - `get_skill(name)`: Read the full `SKILL.md` instructions.
 - `get_skill_resource(name, resource_path)`: Read disclosed `references/*`, `scripts/*`, or text `assets/*` files on demand with path traversal protection.
 - `validate_skill(content)`: Test frontmatter syntax in memory.
 - `audit_skill(content)`: Audit a raw skill document for prompt injections, AST taint flows, and malicious patterns.
+- `audit_mcp_config(config_path)`: Audit an `mcp.json` configuration for plaintext secrets, shell wrappers, and tool poisoning.
+- `check_policy(content, policy_path)`: Evaluate a `SKILL.md` document against a `.skillforge-policy.yaml` gate.
 - `skill://{name}`: Resource URI for direct document retrieval.
 
 ---
@@ -655,12 +658,16 @@ SkillForge detects your assistant environment and places skills in the canonical
 
 | Assistant | Detected by | Installed location |
 | :--- | :--- | :--- |
-| **Google Antigravity / Gemini CLI** | `.gemini/` | `.gemini/config/skills/<name>/SKILL.md` |
+| **Google Antigravity** | `.gemini/` | `.gemini/config/skills/<name>/SKILL.md` |
+| **Gemini CLI** | `.gemini/skills/`, `GEMINI.md` | `.gemini/skills/<name>/SKILL.md` |
 | **Claude Code & Claude Desktop** | `.claude/` | `.claude/skills/<name>/SKILL.md` |
 | **Cursor** | `.cursor/` | `.cursor/skills/<name>/SKILL.md` |
 | **Windsurf** | `.windsurf/`, `.windsurfrules` | `.windsurf/skills/<name>/SKILL.md` |
-| **Cline / Roo-Code** | `.cline/`, `.roomodes` | `.cline/skills/<name>/SKILL.md` |
-| **Universal Agents (`npx skills` / Codex / OpenCode)** | `.agents/` | `.agents/skills/<name>/SKILL.md` |
+| **Cline** | `.cline/`, `.roomodes` | `.cline/skills/<name>/SKILL.md` |
+| **Roo Code** | `.roo/`, `.roomodes` | `.roo/skills/<name>/SKILL.md` |
+| **OpenCode** | `.opencode/`, `opencode.json` | `.opencode/skills/<name>/SKILL.md` |
+| **Codex CLI** | `.codex/` | `.codex/skills/<name>/SKILL.md` |
+| **Universal Agents (`npx skills`)** | `.agents/` | `.agents/skills/<name>/SKILL.md` |
 | **AGENTS.md Catalog** | `AGENTS.md` | Appended to `AGENTS.md` catalog |
 | **GitHub Copilot** | `.github/` | `.github/copilot-instructions.md` |
 
