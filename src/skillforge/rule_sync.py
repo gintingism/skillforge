@@ -20,6 +20,8 @@ TARGET_PATHS: dict[str, str] = {
     "cursorrules": ".cursorrules",
     "windsurf": ".windsurfrules",
     "cline": ".clinerules",
+    "gemini": "GEMINI.md",
+    "copilot": ".github/copilot-instructions.md",
 }
 
 _DIRECTIVE_RE = re.compile(

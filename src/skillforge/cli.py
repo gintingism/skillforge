@@ -1171,8 +1171,8 @@ def sign_artifact(
 
     try:
         if path.is_file() and path.name.endswith(".lock"):
-            sig_file = SkillSigner.sign_lockfile(path, secret, signer_id=signer)
-            typer.echo(f"Signed lockfile: {sig_file}")
+            sig_file = SkillSigner.sign_lockfile(path, secret, signer_id=signer, algorithm=algorithm)
+            typer.echo(f"Signed lockfile ({algorithm}): {sig_file}")
         elif path.is_dir() or path.name == "SKILL.md":
             skill_dir = path if path.is_dir() else path.parent
             payload = SkillSigner.sign_skill(skill_dir, secret, signer_id=signer, algorithm=algorithm)
@@ -1453,22 +1453,25 @@ def sbom_command(
 def provenance_command(
     path: Path = typer.Argument(..., help="Path to skill directory or SKILL.md file."),
     output: Path | None = typer.Option(None, "--output", "-o", help="Output path (defaults to <skill>/provenance.intoto.jsonl)."),
-    key: str | None = typer.Option(None, "--key", "-k", envvar="SKILLFORGE_SIGNING_KEY", help="Optional HMAC signing key."),
+    key: str | None = typer.Option(None, "--key", "-k", envvar="SKILLFORGE_SIGNING_KEY", help="Optional HMAC key or Ed25519 private key PEM."),
+    key_file: Path | None = typer.Option(None, "--key-file", help="Optional file containing signing key or Ed25519 private key PEM."),
+    algorithm: str = typer.Option("hmac-sha256", "--algorithm", "-a", help="Signing algorithm: hmac-sha256 or ed25519."),
     signer_id: str = typer.Option("skillforge-attestor", "--signer", "-s", help="Attestor / signer identifier."),
     json_output: bool = typer.Option(False, "--json", help="Emit provenance envelope JSON to stdout."),
 ) -> None:
     """Generate an in-toto v1 Statement with SLSA v1.0 Provenance attestation for a skill package."""
     from skillforge.provenance import generate_provenance, write_provenance
 
+    resolved_key = key or (key_file.read_text(encoding="utf-8").strip() if key_file and key_file.is_file() else None)
     try:
-        envelope = generate_provenance(path, signing_key=key, signer_id=signer_id)
+        envelope = generate_provenance(path, signing_key=resolved_key, signer_id=signer_id, algorithm=algorithm)
         written = write_provenance(path, envelope, output_path=output)
         if json_output:
             typer.echo(json.dumps(envelope, indent=2))
         else:
             stmt = envelope["statement"]
             subj_count = len(stmt.get("subject", []))
-            signed_state = "signed" if envelope.get("signatures") else "unsigned"
+            signed_state = f"signed/{algorithm}" if envelope.get("signatures") else "unsigned"
             typer.echo(f"Generated SLSA v1.0 provenance ({signed_state}, {subj_count} subjects) -> {written}")
     except (SkillForgeError, OSError) as exc:
         typer.echo(str(exc), err=True)
@@ -1479,13 +1482,15 @@ def provenance_command(
 def verify_provenance_command(
     path: Path = typer.Argument(..., help="Path to skill directory or SKILL.md file."),
     provenance_file: Path | None = typer.Option(None, "--provenance", "-p", help="Custom provenance file path."),
-    key: str | None = typer.Option(None, "--key", "-k", envvar="SKILLFORGE_SIGNING_KEY", help="HMAC key to verify envelope signature."),
+    key: str | None = typer.Option(None, "--key", "-k", envvar="SKILLFORGE_SIGNING_KEY", help="HMAC key or Ed25519 public key PEM."),
+    key_file: Path | None = typer.Option(None, "--key-file", help="Optional file containing HMAC key or Ed25519 public key PEM."),
     json_output: bool = typer.Option(False, "--json", help="Emit verification result as JSON."),
 ) -> None:
-    """Verify SLSA v1.0 provenance subject digests and optional HMAC signature against skill files on disk."""
+    """Verify SLSA v1.0 provenance subject digests and optional cryptographic signature against skill files on disk."""
     from skillforge.provenance import verify_provenance
 
-    res = verify_provenance(path, provenance_path=provenance_file, signing_key=key)
+    resolved_key = key or (key_file.read_text(encoding="utf-8").strip() if key_file and key_file.is_file() else None)
+    res = verify_provenance(path, provenance_path=provenance_file, signing_key=resolved_key)
     if json_output:
         typer.echo(json.dumps(res.to_dict(), indent=2))
     else:
