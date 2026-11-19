@@ -102,6 +102,7 @@ def generate_provenance(
     skill_dir: Path,
     signing_key: str | None = None,
     signer_id: str = "skillforge-attestor",
+    algorithm: str = "hmac-sha256",
 ) -> dict[str, Any]:
     """Generate an in-toto v1 Statement with SLSA v1.0 Provenance for a skill package."""
     target_dir = skill_dir.parent if skill_dir.is_file() else skill_dir
@@ -172,17 +173,26 @@ def generate_provenance(
     }
 
     if signing_key is not None:
-        if len(signing_key.strip()) < 16:
-            raise ProvenanceError("Signing key must be at least 16 characters long.")
         canonical = _canonical_statement_bytes(statement)
-        sig_hex = hmac.new(signing_key.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
+        if algorithm == "ed25519":
+            try:
+                sig_hex = SkillSigner._sign_ed25519(signing_key, canonical)
+            except SkillForgeError as exc:
+                raise ProvenanceError(str(exc)) from exc
+        elif algorithm == "hmac-sha256":
+            if len(signing_key.strip()) < 16:
+                raise ProvenanceError("Signing key must be at least 16 characters long.")
+            sig_hex = hmac.new(signing_key.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
+        else:
+            raise ProvenanceError(f"Unsupported provenance signing algorithm: {algorithm}")
+
         return {
             "payloadType": "application/vnd.in-toto+json",
             "statement": statement,
             "signatures": [
                 {
                     "keyid": signer_id,
-                    "algorithm": "hmac-sha256",
+                    "algorithm": algorithm,
                     "sig": sig_hex,
                 }
             ],
@@ -301,14 +311,27 @@ def verify_provenance(
             issues.append("Signing key provided, but provenance envelope contains no signatures.")
         else:
             canonical = _canonical_statement_bytes(statement)
-            expected_hmac = hmac.new(
-                signing_key.encode("utf-8"), canonical, hashlib.sha256
-            ).hexdigest()
-            first_sig = signatures[0].get("sig", "") if isinstance(signatures[0], dict) else ""
-            if hmac.compare_digest(expected_hmac, str(first_sig)):
-                sig_verified = True
+            first_entry = signatures[0] if isinstance(signatures[0], dict) else {}
+            sig_alg = str(first_entry.get("algorithm", "hmac-sha256"))
+            first_sig = str(first_entry.get("sig", ""))
+            if sig_alg == "ed25519":
+                try:
+                    if SkillSigner._verify_ed25519(signing_key, canonical, first_sig):
+                        sig_verified = True
+                    else:
+                        issues.append("Provenance Ed25519 signature mismatch.")
+                except SkillForgeError as exc:
+                    issues.append(str(exc))
+            elif sig_alg == "hmac-sha256":
+                expected_hmac = hmac.new(
+                    signing_key.encode("utf-8"), canonical, hashlib.sha256
+                ).hexdigest()
+                if hmac.compare_digest(expected_hmac, first_sig):
+                    sig_verified = True
+                else:
+                    issues.append("Provenance cryptographic HMAC signature mismatch.")
             else:
-                issues.append("Provenance cryptographic HMAC signature mismatch.")
+                issues.append(f"Unsupported provenance signature algorithm: {sig_alg}")
 
     return ProvenanceVerificationResult(
         valid=len(issues) == 0,

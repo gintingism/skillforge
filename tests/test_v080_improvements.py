@@ -138,3 +138,61 @@ def test_mcp_server_exposes_audit_mcp_and_check_policy(tmp_path: Path) -> None:
     policy_raw = server._tool_manager._tools["check_policy"].fn(skill_md, str(policy_file))  # noqa: SLF001
     policy_data = json.loads(policy_raw)
     assert policy_data["policy_passed"] is True
+
+
+def test_ed25519_lockfile_sign_and_verify(tmp_path: Path) -> None:
+    lock_file = tmp_path / "skillforge.lock"
+    lock_file.write_text('{"version": "1", "skills": {}}\n', encoding="utf-8")
+
+    priv_pem, pub_pem = SkillSigner.generate_ed25519_keypair()
+    sig_path = SkillSigner.sign_lockfile(lock_file, priv_pem, signer_id="release-bot", algorithm="ed25519")
+    assert sig_path.is_file()
+
+    ok = SkillSigner.verify_lockfile(lock_file, key=pub_pem)
+    assert ok.valid is True
+    assert ok.algorithm == "ed25519"
+
+    _, other_pub = SkillSigner.generate_ed25519_keypair()
+    bad = SkillSigner.verify_lockfile(lock_file, key=other_pub)
+    assert bad.valid is False
+    assert any("Ed25519 signature mismatch" in issue for issue in bad.issues)
+
+
+def test_ed25519_slsa_provenance_roundtrip(tmp_path: Path) -> None:
+    from skillforge.provenance import generate_provenance, verify_provenance, write_provenance
+
+    skill_dir = tmp_path / "prov-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: prov-skill\ndescription: Signed SLSA skill.\n---\n# Body\nSafe instructions.\n",
+        encoding="utf-8",
+    )
+
+    priv_pem, pub_pem = SkillSigner.generate_ed25519_keypair()
+    envelope = generate_provenance(skill_dir, signing_key=priv_pem, signer_id="ci-ed25519", algorithm="ed25519")
+    assert envelope["signatures"][0]["algorithm"] == "ed25519"
+    write_provenance(skill_dir, envelope)
+
+    verified = verify_provenance(skill_dir, signing_key=pub_pem)
+    assert verified.valid is True
+    assert verified.signature_verified is True
+
+    _, other_pub = SkillSigner.generate_ed25519_keypair()
+    failed = verify_provenance(skill_dir, signing_key=other_pub)
+    assert failed.valid is False
+    assert failed.signature_verified is False
+    assert any("Ed25519 signature mismatch" in issue for issue in failed.issues)
+
+
+def test_rule_sync_supports_gemini_and_copilot_targets(tmp_path: Path) -> None:
+    from skillforge.rule_sync import sync_context_rules
+
+    (tmp_path / "AGENTS.md").write_text("# Rules\n\nAlways run pytest.\n", encoding="utf-8")
+    report = sync_context_rules(tmp_path, targets=["gemini", "copilot"])
+    assert report.passed is True
+    assert (tmp_path / "GEMINI.md").is_file()
+    assert (tmp_path / ".github" / "copilot-instructions.md").is_file()
+
+    check = sync_context_rules(tmp_path, targets=["gemini", "copilot"], check_only=True)
+    assert check.passed is True
+

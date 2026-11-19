@@ -289,17 +289,31 @@ class SkillSigner:
         )
 
     @classmethod
-    def sign_lockfile(cls, lock_path: Path, key: str, signer_id: str = "lockfile-guard") -> Path:
+    def sign_lockfile(
+        cls,
+        lock_path: Path,
+        key: str,
+        signer_id: str = "lockfile-guard",
+        algorithm: str = "hmac-sha256",
+    ) -> Path:
         """Sign a skillforge.lock file."""
         if not lock_path.is_file():
             raise SigningError(f"Lockfile not found: {lock_path}")
         file_hash = cls._hash_file(lock_path)
         canonical = json.dumps({"lockfile_hash": file_hash}, sort_keys=True).encode("utf-8")
-        sig = hmac.new(key.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
+
+        if algorithm == "ed25519":
+            sig = cls._sign_ed25519(key, canonical)
+        elif algorithm == "hmac-sha256":
+            if not key or len(key.strip()) < 16:
+                raise SigningError("Signing key must be at least 16 characters long.")
+            sig = hmac.new(key.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
+        else:
+            raise SigningError(f"Unsupported signing algorithm: {algorithm}")
 
         payload = {
             "version": "1.0",
-            "algorithm": "hmac-sha256",
+            "algorithm": algorithm,
             "signer_id": signer_id,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "target_file": lock_path.name,
@@ -336,6 +350,7 @@ class SkillSigner:
             )
 
         expected_hash = sig_data.get("file_sha256", "")
+        algorithm = sig_data.get("algorithm", "hmac-sha256")
         current_hash = cls._hash_file(lock_path)
         issues: list[str] = []
         if current_hash != expected_hash:
@@ -343,14 +358,24 @@ class SkillSigner:
 
         if key:
             canonical = json.dumps({"lockfile_hash": expected_hash}, sort_keys=True).encode("utf-8")
-            computed = hmac.new(key.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
-            if not hmac.compare_digest(computed, sig_data.get("signature", "")):
-                issues.append("Lockfile cryptographic signature mismatch.")
+            expected_sig = str(sig_data.get("signature", ""))
+            if algorithm == "ed25519":
+                try:
+                    if not cls._verify_ed25519(key, canonical, expected_sig):
+                        issues.append("Lockfile Ed25519 signature mismatch.")
+                except SigningError as exc:
+                    issues.append(str(exc))
+            elif algorithm == "hmac-sha256":
+                computed = hmac.new(key.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
+                if not hmac.compare_digest(computed, expected_sig):
+                    issues.append("Lockfile cryptographic signature mismatch.")
+            else:
+                issues.append(f"Unsupported signing algorithm: {algorithm}")
 
         return VerificationResult(
             valid=len(issues) == 0,
             signer_id=sig_data.get("signer_id", "unknown"),
-            algorithm=sig_data.get("algorithm", "hmac-sha256"),
+            algorithm=algorithm,
             created_at=sig_data.get("created_at", ""),
             file_count=1,
             issues=issues,

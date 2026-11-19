@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-audit:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Run unit tests
+        run: pytest -q
+      - name: Run mypy typecheck
+        run: mypy src/skillforge
+      - name: Dogfood SkillForge security policy and context rules
+        run: |
+          skillforge audit src/skillforge/builtin_skills --policy .skillforge-policy.yaml
+          skillforge audit .agents/skills --policy .skillforge-policy.yaml
+          skillforge sync-rules --check
+          skillforge lint-context
