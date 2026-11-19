@@ -1058,9 +1058,14 @@ def remove(
 
 
 @app.command("serve-mcp")
-def serve_mcp() -> None:
-    """Serve SkillForge over MCP stdio."""
-    run_mcp_server()
+def serve_mcp(
+    transport: str = typer.Option("stdio", "--transport", "-t", help="MCP transport: stdio, sse, or streamable-http."),
+) -> None:
+    """Serve SkillForge over MCP."""
+    if transport not in ("stdio", "sse", "streamable-http"):
+        typer.echo(f"Error: Unsupported MCP transport '{transport}'. Use stdio, sse, or streamable-http.", err=True)
+        raise typer.Exit(code=1)
+    run_mcp_server(transport=transport)  # type: ignore[arg-type]
 
 
 @app.command("search-remote")
@@ -1110,27 +1115,48 @@ def run_lsp() -> None:
 
 @app.command("keygen")
 def keygen(
-    out: Path | None = typer.Option(None, "--out", "-o", help="Optional output file to save key."),
+    out: Path | None = typer.Option(None, "--out", "-o", help="Optional output file to save key (for ed25519, writes <out> and <out>.pub)."),
+    algorithm: str = typer.Option("hmac-sha256", "--algorithm", "-a", help="Key algorithm: hmac-sha256 or ed25519."),
 ) -> None:
-    """Generate a cryptographically secure 256-bit signing key for skill releases."""
-    from skillforge.signing import SkillSigner
+    """Generate a cryptographic signing key or Ed25519 keypair for skill releases."""
+    from skillforge.signing import SkillSigner, SigningError
 
-    key = SkillSigner.generate_key()
-    if out:
-        out.write_text(key.strip() + "\n", encoding="utf-8")
-        typer.echo(f"Generated secret key saved to {out}")
-    else:
-        typer.echo(f"Secret signing key (keep safe!):\n{key}")
+    try:
+        if algorithm == "ed25519":
+            priv_pem, pub_pem = SkillSigner.generate_ed25519_keypair()
+            if out:
+                out.write_text(priv_pem, encoding="utf-8")
+                pub_path = out.with_suffix(out.suffix + ".pub") if out.suffix else Path(f"{out}.pub")
+                pub_path.write_text(pub_pem, encoding="utf-8")
+                typer.echo(f"Generated Ed25519 keypair: private={out}, public={pub_path}")
+            else:
+                typer.echo(f"{priv_pem}\n{pub_pem}")
+            return
+
+        if algorithm != "hmac-sha256":
+            typer.echo(f"Error: Unsupported algorithm '{algorithm}'.", err=True)
+            raise typer.Exit(code=1)
+
+        key = SkillSigner.generate_key()
+        if out:
+            out.write_text(key.strip() + "\n", encoding="utf-8")
+            typer.echo(f"Generated secret key saved to {out}")
+        else:
+            typer.echo(f"Secret signing key (keep safe!):\n{key}")
+    except SigningError as exc:
+        typer.echo(f"Keygen failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
 
 
 @app.command("sign")
 def sign_artifact(
     path: Path = typer.Argument(..., help="Path to skill directory or skillforge.lock."),
-    key: str | None = typer.Option(None, "--key", "-k", help="Secret key hex string (or env SKILLFORGE_KEY)."),
-    key_file: Path | None = typer.Option(None, "--key-file", help="File containing secret key."),
+    key: str | None = typer.Option(None, "--key", "-k", help="Secret key hex or Ed25519 PEM (or env SKILLFORGE_KEY)."),
+    key_file: Path | None = typer.Option(None, "--key-file", help="File containing secret key or Ed25519 private key PEM."),
     signer: str = typer.Option("local-maintainer", "--signer", help="Signer identity tag."),
+    algorithm: str = typer.Option("hmac-sha256", "--algorithm", "-a", help="Signing algorithm: hmac-sha256 or ed25519."),
 ) -> None:
-    """Sign a skill package or lockfile with HMAC-SHA256 tamper-evident attestation."""
+    """Sign a skill package or lockfile with tamper-evident cryptographic attestation."""
     import os
     from skillforge.signing import SkillSigner, SigningError
 
@@ -1149,9 +1175,9 @@ def sign_artifact(
             typer.echo(f"Signed lockfile: {sig_file}")
         elif path.is_dir() or path.name == "SKILL.md":
             skill_dir = path if path.is_dir() else path.parent
-            payload = SkillSigner.sign_skill(skill_dir, secret, signer_id=signer)
+            payload = SkillSigner.sign_skill(skill_dir, secret, signer_id=signer, algorithm=algorithm)
             sig_file = SkillSigner.write_signature(skill_dir, payload)
-            typer.echo(f"Signed skill package ({len(payload['manifest'])} files): {sig_file}")
+            typer.echo(f"Signed skill package ({len(payload['manifest'])} files, {algorithm}): {sig_file}")
         else:
             typer.echo(f"Error: Path {path} is neither a skill directory nor a lockfile.", err=True)
             raise typer.Exit(code=1)
@@ -1209,6 +1235,7 @@ def tui_command(
 @app.command("firewall-mcp")
 def firewall_mcp(
     check: Path | None = typer.Option(None, "--check", "-c", help="Inspect a JSONL file of MCP JSON-RPC traffic."),
+    wrap_config: Path | None = typer.Option(None, "--wrap-config", "-w", help="Wrap mcpServers in an mcp.json file with skillforge firewall-mcp."),
     audit_log: Path | None = typer.Option(None, "--audit-log", "-l", help="Path to write JSONL forensic audit log."),
     allow_tool: list[str] | None = typer.Option(None, "--allow-tool", "-a", help="Restrict allowed MCP tool names."),
     no_redact: bool = typer.Option(False, "--no-redact", help="Disable automatic secret redaction on responses."),
@@ -1216,7 +1243,7 @@ def firewall_mcp(
     command: list[str] | None = typer.Argument(None, help="Upstream MCP server command and arguments to proxy."),
 ) -> None:
     """Run inline zero-trust MCP JSON-RPC security firewall or inspect a JSONL traffic capture."""
-    from skillforge.mcp_firewall import MCPFirewall
+    from skillforge.mcp_firewall import MCPFirewall, wrap_mcp_config
 
     allowed_set = set(allow_tool) if allow_tool else None
     fw = MCPFirewall(
@@ -1226,6 +1253,14 @@ def firewall_mcp(
     )
 
     try:
+        if wrap_config is not None:
+            res = wrap_mcp_config(wrap_config)
+            if json_output:
+                typer.echo(json.dumps(res, indent=2))
+            else:
+                typer.echo(f"Wrapped {res['wrapped_servers']} MCP server(s) in {res['config']}")
+            return
+
         if check is not None:
             if not check.is_file():
                 typer.echo(f"Error: JSONL file not found: {check}", err=True)

@@ -397,6 +397,80 @@ class AgentsMarkdownAdapter(Adapter):
         return re.findall(r"<!-- skillforge:(.*?):start -->", content)
 
 
+class _DirectorySkillAdapter(Adapter):
+    """Shared base for <root>/skills/<name>/SKILL.md assistant layouts."""
+
+    root_dir: str = ""
+    label: str = ""
+    extra_markers: tuple[str, ...] = ()
+
+    def detect(self, project: Path) -> bool:
+        if (project / self.root_dir).is_dir():
+            return True
+        return any((project / marker).exists() for marker in self.extra_markers)
+
+    def install(self, skill: SkillTarget, project: Path) -> Path:
+        skill_obj, package = self._extract_skill(skill)
+        skill_dir = project / self.root_dir / "skills" / skill_obj.name
+        target = skill_dir / "SKILL.md"
+        try:
+            if package:
+                package.save(skill_dir)
+            else:
+                skill_dir.mkdir(parents=True, exist_ok=True)
+                target.write_text(skill_obj.render(), encoding="utf-8")
+        except OSError as exc:
+            raise AdapterError(f"Unable to install {self.label} skill: {exc}") from exc
+        return target
+
+    def remove(self, name: str, project: Path) -> bool:
+        self._checked_name(name)
+        skill_dir = project / self.root_dir / "skills" / name
+        if skill_dir.exists():
+            self._safe_rmtree(skill_dir)
+            return True
+        return False
+
+    def list_skills(self, project: Path) -> list[str]:
+        skills_dir = project / self.root_dir / "skills"
+        if not skills_dir.is_dir():
+            return []
+        return sorted(p.parent.name for p in skills_dir.glob("*/SKILL.md"))
+
+
+class OpenCodeAdapter(_DirectorySkillAdapter):
+    """Adapter for OpenCode (.opencode/skills)."""
+
+    root_dir = ".opencode"
+    label = "OpenCode"
+    extra_markers = ("opencode.json",)
+
+
+class RooCodeAdapter(_DirectorySkillAdapter):
+    """Adapter for Roo Code (.roo/skills)."""
+
+    root_dir = ".roo"
+    label = "Roo Code"
+    extra_markers = (".roomodes",)
+
+
+class CodexCliAdapter(_DirectorySkillAdapter):
+    """Adapter for OpenAI Codex CLI (.codex/skills)."""
+
+    root_dir = ".codex"
+    label = "Codex CLI"
+
+
+class GeminiCliAdapter(_DirectorySkillAdapter):
+    """Adapter for Gemini CLI (.gemini/skills)."""
+
+    root_dir = ".gemini"
+    label = "Gemini CLI"
+
+    def detect(self, project: Path) -> bool:
+        return (project / ".gemini" / "skills").is_dir() or (project / "GEMINI.md").is_file()
+
+
 def detect_adapters(project: Path, global_scope: bool = False) -> list[Adapter]:
     """Return adapters detected in a project (or global config), in stable order."""
     if global_scope:
@@ -413,6 +487,10 @@ def detect_adapters(project: Path, global_scope: bool = False) -> list[Adapter]:
         AntigravityAdapter(),
         WindsurfAdapter(),
         ClineAdapter(),
+        OpenCodeAdapter(),
+        RooCodeAdapter(),
+        CodexCliAdapter(),
+        GeminiCliAdapter(),
         UniversalAgentsAdapter(),
         AgentsMarkdownAdapter(),
     )

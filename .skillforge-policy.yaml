@@ -1,0 +1,10 @@
+version: "1.0"
+min_score: 80
+disable_rules: []
+severity_overrides: {}
+suppressions:
+  # Example scoped suppression with required reason and expiry date:
+  # - rule_id: SEC-012
+  #   target: "legacy-helper*"
+  #   reason: "Reviewed wrapper pending migration to references/"
+  #   expires_at: "2027-06-01"

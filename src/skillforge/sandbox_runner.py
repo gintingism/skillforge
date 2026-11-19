@@ -119,6 +119,7 @@ class SandboxExecutionResult:
     stderr: str
     blocked_events: list[dict[str, str]] = field(default_factory=list)
     duration_ms: float = 0.0
+    backend: str = "python-capability-jail"
 
     @property
     def passed(self) -> bool:
@@ -131,18 +132,57 @@ class SandboxExecutionResult:
             "exit_code": self.exit_code,
             "timed_out": self.timed_out,
             "duration_ms": round(self.duration_ms, 2),
+            "backend": self.backend,
             "blocked_events": self.blocked_events,
             "stdout": self.stdout,
             "stderr": self.stderr,
         }
 
 
+def _resolve_runtime_command(staged_script: Path, args: list[str]) -> tuple[list[str], str]:
+    suffix = staged_script.suffix.lower()
+    if suffix == ".py" or suffix == "":
+        return [sys.executable, str(staged_script), *args], "python-capability-jail"
+    if suffix in (".sh", ".bash"):
+        bash_bin = shutil.which("bash") or "/bin/bash"
+        return [bash_bin, str(staged_script), *args], "subprocess-env-jail"
+    if suffix in (".js", ".mjs"):
+        node_bin = shutil.which("node")
+        if not node_bin:
+            raise SkillForgeError("Node.js runtime ('node') not found for .js/.mjs sandbox execution.")
+        return [node_bin, str(staged_script), *args], "subprocess-env-jail"
+    raise SkillForgeError(f"Unsupported sandbox script extension: {suffix}")
+
+
+def _wrap_with_bwrap(cmd: list[str], work_dir: Path, guard_dir: Path | None) -> list[str]:
+    bwrap_cmd = [
+        "bwrap",
+        "--ro-bind",
+        "/",
+        "/",
+        "--dev",
+        "/dev",
+        "--proc",
+        "/proc",
+        "--tmpfs",
+        "/tmp",
+        "--bind",
+        str(work_dir),
+        str(work_dir),
+    ]
+    if guard_dir is not None:
+        bwrap_cmd.extend(["--ro-bind", str(guard_dir), str(guard_dir)])
+    bwrap_cmd.extend(["--unshare-net", "--die-with-parent", "--chdir", str(work_dir), "--", *cmd])
+    return bwrap_cmd
+
+
 def run_in_sandbox(
     script_path: Path,
     script_args: list[str] | None = None,
     timeout_sec: float = 5.0,
+    use_os_jail: bool = True,
 ) -> SandboxExecutionResult:
-    """Execute a Python script inside an ephemeral capability-jailed sandbox."""
+    """Execute a bundled script inside an ephemeral capability-jailed sandbox."""
     if not script_path.is_file():
         raise SkillForgeError(f"Script not found: {script_path}")
 
@@ -156,14 +196,11 @@ def run_in_sandbox(
         guard_dir.mkdir(parents=True, exist_ok=True)
         work_dir.mkdir(parents=True, exist_ok=True)
 
-        # Write sitecustomize.py capability guard
         (guard_dir / "sitecustomize.py").write_text(_SANDBOX_SITECUSTOMIZE, encoding="utf-8")
 
-        # Copy target script into ephemeral workspace
         staged_script = work_dir / script_path.name
         shutil.copy2(script_path, staged_script)
 
-        # Construct stripped, zero-credential environment
         safe_env: dict[str, str] = {
             "PYTHONPATH": str(guard_dir),
             "SKILLFORGE_SANDBOX_ROOT": str(work_dir),
@@ -178,10 +215,10 @@ def run_in_sandbox(
             if sys_key in os.environ:
                 safe_env[sys_key] = os.environ[sys_key]
 
-        cmd = [sys.executable, "-I", str(staged_script), *args]
-        # Note: -I isolates Python from user site-packages, so we pass -S or normal with PYTHONPATH
-        # Using standard invocation with custom PYTHONPATH so sitecustomize loads automatically:
-        cmd = [sys.executable, str(staged_script), *args]
+        cmd, backend = _resolve_runtime_command(staged_script, args)
+        if use_os_jail and shutil.which("bwrap"):
+            cmd = _wrap_with_bwrap(cmd, work_dir, guard_dir if backend == "python-capability-jail" else None)
+            backend = "bwrap"
 
         timed_out = False
         try:
@@ -217,4 +254,5 @@ def run_in_sandbox(
         stderr=stderr,
         blocked_events=blocked_events,
         duration_ms=duration_ms,
+        backend=backend,
     )

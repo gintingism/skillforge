@@ -32,6 +32,8 @@ def test_server_initialization_exposes_tools_and_resource(tmp_path: Path) -> Non
         "get_skill_resource",
         "validate_skill",
         "audit_skill",
+        "audit_mcp_config",
+        "check_policy",
     }
     assert all(tool.annotations is not None and tool.annotations.read_only_hint is True for tool in tools)
     assert any(resource.uri_template == "skill://{name}" for resource in resources)

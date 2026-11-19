@@ -62,6 +62,64 @@ class SkillSigner:
         return secrets.token_hex(32)
 
     @staticmethod
+    def generate_ed25519_keypair() -> tuple[str, str]:
+        """Generate a PEM-encoded (private_key_pem, public_key_pem) Ed25519 keypair."""
+        try:
+            from cryptography.hazmat.primitives import serialization
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        except ImportError as exc:
+            raise SigningError("Ed25519 requires the 'cryptography' package.") from exc
+
+        private_key = Ed25519PrivateKey.generate()
+        private_pem = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        ).decode("utf-8")
+        public_pem = private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        ).decode("utf-8")
+        return private_pem, public_pem
+
+    @staticmethod
+    def _sign_ed25519(private_key_pem: str, payload: bytes) -> str:
+        try:
+            from cryptography.hazmat.primitives import serialization
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        except ImportError as exc:
+            raise SigningError("Ed25519 requires the 'cryptography' package.") from exc
+
+        try:
+            loaded = serialization.load_pem_private_key(private_key_pem.encode("utf-8"), password=None)
+        except Exception as exc:
+            raise SigningError(f"Invalid Ed25519 private key PEM: {exc}") from exc
+        if not isinstance(loaded, Ed25519PrivateKey):
+            raise SigningError("Provided PEM key is not an Ed25519 private key.")
+        return loaded.sign(payload).hex()
+
+    @staticmethod
+    def _verify_ed25519(public_key_pem: str, payload: bytes, signature_hex: str) -> bool:
+        try:
+            from cryptography.exceptions import InvalidSignature
+            from cryptography.hazmat.primitives import serialization
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        except ImportError as exc:
+            raise SigningError("Ed25519 requires the 'cryptography' package.") from exc
+
+        try:
+            loaded = serialization.load_pem_public_key(public_key_pem.encode("utf-8"))
+        except Exception as exc:
+            raise SigningError(f"Invalid Ed25519 public key PEM: {exc}") from exc
+        if not isinstance(loaded, Ed25519PublicKey):
+            raise SigningError("Provided PEM key is not an Ed25519 public key.")
+        try:
+            loaded.verify(bytes.fromhex(signature_hex), payload)
+            return True
+        except (InvalidSignature, ValueError):
+            return False
+
+    @staticmethod
     def _hash_file(file_path: Path) -> str:
         """Compute SHA-256 digest of a file in streaming chunks."""
         hasher = hashlib.sha256()
@@ -105,19 +163,25 @@ class SkillSigner:
         skill_dir: Path,
         key: str,
         signer_id: str = "local-maintainer",
+        algorithm: str = "hmac-sha256",
     ) -> dict[str, Any]:
         """Generate a cryptographic signature payload for a skill directory."""
-        if not key or len(key.strip()) < 16:
-            raise SigningError("Signing key must be at least 16 characters long.")
-
         manifest = cls.compute_manifest(skill_dir)
         canonical = cls._canonical_bytes(manifest)
-        sig = hmac.new(key.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
+
+        if algorithm == "ed25519":
+            sig = cls._sign_ed25519(key, canonical)
+        elif algorithm == "hmac-sha256":
+            if not key or len(key.strip()) < 16:
+                raise SigningError("Signing key must be at least 16 characters long.")
+            sig = hmac.new(key.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
+        else:
+            raise SigningError(f"Unsupported signing algorithm: {algorithm}")
 
         now_iso = datetime.now(timezone.utc).isoformat()
         return {
             "version": "1.0",
-            "algorithm": "hmac-sha256",
+            "algorithm": algorithm,
             "signer_id": signer_id,
             "created_at": now_iso,
             "manifest": manifest,
@@ -143,7 +207,7 @@ class SkillSigner:
         key: str | None = None,
         sig_file: Path | None = None,
     ) -> VerificationResult:
-        """Verify that skill files match the signature manifest and valid HMAC."""
+        """Verify that skill files match the signature manifest and valid cryptographic signature."""
         target_sig = sig_file or (skill_dir / SIGNATURE_FILENAME)
         if not target_sig.is_file():
             return VerificationResult(
@@ -199,12 +263,20 @@ class SkillSigner:
             if rel_path not in expected_manifest:
                 issues.append(f"Untracked/unverified file added: {rel_path}")
 
-        # If secret key is provided, verify HMAC signature
         if key:
             canonical = cls._canonical_bytes(expected_manifest)
-            computed_sig = hmac.new(key.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
-            if not hmac.compare_digest(computed_sig, expected_sig):
-                issues.append("Cryptographic signature mismatch: key or signature invalid.")
+            if algorithm == "ed25519":
+                try:
+                    if not cls._verify_ed25519(key, canonical, expected_sig):
+                        issues.append("Ed25519 signature mismatch: public key or signature invalid.")
+                except SigningError as exc:
+                    issues.append(str(exc))
+            elif algorithm == "hmac-sha256":
+                computed_sig = hmac.new(key.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
+                if not hmac.compare_digest(computed_sig, expected_sig):
+                    issues.append("Cryptographic signature mismatch: key or signature invalid.")
+            else:
+                issues.append(f"Unsupported signing algorithm: {algorithm}")
 
         is_valid = len(issues) == 0
         return VerificationResult(

@@ -8,13 +8,15 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Literal
 
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from .errors import SkillForgeError
+from .policy import SecurityPolicy, apply_policy
 from .registry import BuiltinRegistry, CompositeRegistry, LocalRegistry, Registry
-from .security import SkillAuditor
+from .security import SkillAuditor, audit_mcp_config as run_audit_mcp_config
 from .skill import estimate_tokens, parse_skill
 from .telemetry import record_telemetry_event
 
@@ -159,6 +161,31 @@ def create_mcp_server(registry: Registry) -> MCPServer:
         except SkillForgeError as exc:
             return json.dumps({"passed": False, "error": str(exc)})
 
+    @server.tool(name="audit_mcp_config", annotations=READ_ONLY)
+    def audit_mcp_config_tool(config_path: str) -> str:
+        """Audit an mcp.json configuration file for plaintext secrets, shell wrappers, and poisoning."""
+        try:
+            report = run_audit_mcp_config(Path(config_path))
+            return json.dumps(report.to_dict())
+        except SkillForgeError as exc:
+            return json.dumps({"passed": False, "error": str(exc)})
+
+    @server.tool(name="check_policy", annotations=READ_ONLY)
+    def check_policy(content: str, policy_path: str = ".skillforge-policy.yaml") -> str:
+        """Audit SKILL.md content against a .skillforge-policy.yaml gate."""
+        try:
+            policy = SecurityPolicy.load(Path(policy_path))
+            report = SkillAuditor().audit_content(content)
+            evaluated = apply_policy(report, policy)
+            payload = evaluated.report.to_dict()
+            payload["policy_passed"] = evaluated.passed
+            payload["min_score"] = evaluated.min_score
+            payload["suppressed_count"] = len(evaluated.suppressed_findings)
+            payload["expired_suppressions"] = len(evaluated.expired_suppressions)
+            return json.dumps(payload)
+        except SkillForgeError as exc:
+            return json.dumps({"policy_passed": False, "error": str(exc)})
+
     @server.resource("skill://{name}", mime_type="text/markdown")
     def skill_resource(name: str) -> str:
         """Read a skill by its skill:// URI."""
@@ -173,6 +200,6 @@ def registry_from_environment() -> Registry:
     return CompositeRegistry((local, BuiltinRegistry()))
 
 
-def run_mcp_server() -> None:
-    """Run the SkillForge MCP server over protocol-safe stdio."""
-    create_mcp_server(registry_from_environment()).run("stdio")
+def run_mcp_server(transport: Literal["stdio", "sse", "streamable-http"] = "stdio") -> None:
+    """Run the SkillForge MCP server over the configured MCP transport."""
+    create_mcp_server(registry_from_environment()).run(transport)

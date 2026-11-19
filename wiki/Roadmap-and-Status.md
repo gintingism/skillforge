@@ -18,17 +18,11 @@ This document tracks the current development status, delivered milestones, and f
 ```mermaid
 timeline
     title SkillForge Evolution
-    v0.1.0 : Core parser and frontmatter validator
-           : Initial audit engine (SEC-001 to SEC-007)
-           : Reproducible lockfile (SHA-256)
-           : Basic install adapters (Claude, Cursor)
-    v0.2.0 (Current) : Python AST taint flow analysis (SEC-008)
-                     : Token budget optimizer and progressive disclosure refactoring
-                     : Context file linter (AGENTS.md, CLAUDE.md)
-                     : Native MCP server (serve-mcp) and Agent Plugins 1.0
-                     : 29 production-grade built-in engineering skills
-                     : OASIS SARIF v2.1.0 export for GitHub Code Scanning
-                     : OpenAPI and Swagger specification importer
+    v0.1.0 : Core parser, frontmatter validator, SHA-256 lockfile
+    v0.2.0 : Python AST taint flow (SEC-008), token budget, MCP server, SARIF
+    v0.5.0 : Sandbox jail, MCP firewall, multi-model benchmark, LSP, TUI
+    v0.7.0 : Policy-as-code, AIBOM/SLSA, rule sync, MCP sweep, telemetry
+    v0.8.0 (Next) : Ed25519 asymmetric signing, bwrap OS jail, OpenCode/Roo/Codex/Gemini adapters
 ```
 
 ### Delivered in v0.2.0 (Current Release)

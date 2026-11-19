@@ -406,3 +406,38 @@ class MCPFirewall:
                 proc.kill()
 
         return proc.returncode or 0
+
+
+def wrap_mcp_config(config_path: Path, output_path: Path | None = None) -> dict[str, Any]:
+    """Wrap stdio mcpServers entries in an mcp.json config with skillforge firewall-mcp."""
+    if not config_path.is_file():
+        raise SkillForgeError(f"MCP config not found: {config_path}")
+
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SkillForgeError(f"Invalid MCP config JSON {config_path}: {exc}") from exc
+
+    if not isinstance(data, dict) or not isinstance(data.get("mcpServers"), dict):
+        raise SkillForgeError(f"MCP config {config_path} must contain a 'mcpServers' object")
+
+    wrapped_count = 0
+    for server_cfg in data["mcpServers"].values():
+        if not isinstance(server_cfg, dict):
+            continue
+        command = server_cfg.get("command")
+        if not isinstance(command, str) or not command.strip():
+            continue
+        args = server_cfg.get("args") or []
+        if not isinstance(args, list):
+            continue
+        if command == "skillforge" and "firewall-mcp" in args:
+            continue
+
+        server_cfg["command"] = "skillforge"
+        server_cfg["args"] = ["firewall-mcp", "--", command, *[str(a) for a in args]]
+        wrapped_count += 1
+
+    target = output_path or config_path
+    target.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return {"config": str(target), "wrapped_servers": wrapped_count}

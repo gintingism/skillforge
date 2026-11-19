@@ -1,0 +1,14 @@
+---
+description: Core repository instructions synchronized from AGENTS.md
+globs: "*"
+alwaysApply: true
+---
+
+<!-- skillforge-sync-sha256: 9473c9100e129e865d314f614fb4d187ad60616888d01d18866840dc33c67d9c -->
+
+# Agent Instructions
+
+Always follow the `caveman` communication protocol in `.agents/skills/caveman/SKILL.md` for all chat responses unless the user says `stop caveman` or `normal mode`.
+
+- Keep code, comments, commit messages, and documentation in normal prose.
+- Preserve exact file paths, commands, symbols, error lines, and security warnings.
