@@ -197,9 +197,12 @@ def discover_context_files(project_root: Path) -> list[Path]:
     candidates = (
         project_root / "AGENTS.md",
         project_root / "CLAUDE.md",
+        project_root / "GEMINI.md",
         project_root / ".cursorrules",
         project_root / ".windsurfrules",
+        project_root / ".clinerules",
         project_root / ".gemini" / "GEMINI.md",
+        project_root / ".github" / "copilot-instructions.md",
     )
     found = [p for p in candidates if p.is_file()]
 

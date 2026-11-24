@@ -26,6 +26,26 @@ inputs:
     description: 'Export audit findings as OASIS SARIF v2.1.0 for GitHub Code Scanning'
     required: false
     default: ''
+  policy:
+    description: 'Optional path to .skillforge-policy.yaml policy gate file'
+    required: false
+    default: ''
+  audit-mcp:
+    description: 'Optional path to mcp.json configuration file to audit'
+    required: false
+    default: ''
+  mcp-lock:
+    description: 'Optional path to mcp-lock.json to verify against rug-pulls (MCP-008)'
+    required: false
+    default: ''
+  sync-rules-check:
+    description: 'Verify synchronized context rules against AGENTS.md (--check)'
+    required: false
+    default: 'false'
+  lint-context:
+    description: 'Lint project instruction files (AGENTS.md, CLAUDE.md, GEMINI.md, etc.)'
+    required: false
+    default: 'false'
 
 runs:
   using: 'composite'
@@ -44,15 +64,42 @@ runs:
     - name: Run SkillForge Audit
       shell: bash
       run: |
-        STRICT_FLAG=""
+        ARGS=("${{ inputs.path }}")
         if [ "${{ inputs.strict }}" = "true" ]; then
-          STRICT_FLAG="--strict"
+          ARGS+=("--strict")
         fi
-        SARIF_FLAG=""
+        if [ -n "${{ inputs.policy }}" ]; then
+          ARGS+=("--policy" "${{ inputs.policy }}")
+        fi
         if [ -n "${{ inputs.sarif }}" ]; then
-          SARIF_FLAG="--sarif ${{ inputs.sarif }}"
+          ARGS+=("--sarif" "${{ inputs.sarif }}")
         fi
-        skillforge audit "${{ inputs.path }}" $STRICT_FLAG $SARIF_FLAG
+        skillforge audit "${ARGS[@]}"
+
+    - name: Run SkillForge MCP Audit
+      if: ${{ inputs.audit-mcp != '' }}
+      shell: bash
+      run: |
+        MCP_ARGS=("${{ inputs.audit-mcp }}")
+        if [ -n "${{ inputs.mcp-lock }}" ]; then
+          MCP_ARGS+=("--verify-lock" "${{ inputs.mcp-lock }}")
+        fi
+        if [ "${{ inputs.strict }}" = "true" ]; then
+          MCP_ARGS+=("--strict")
+        fi
+        skillforge audit-mcp "${MCP_ARGS[@]}"
+
+    - name: Run Context Rule Drift Check
+      if: ${{ inputs.sync-rules-check == 'true' }}
+      shell: bash
+      run: |
+        skillforge sync-rules "${{ inputs.path }}" --check
+
+    - name: Run Context File Linter
+      if: ${{ inputs.lint-context == 'true' }}
+      shell: bash
+      run: |
+        skillforge lint-context --project "${{ inputs.path }}"
 
     - name: Run SkillForge Doctor
       if: ${{ inputs.doctor == 'true' }}

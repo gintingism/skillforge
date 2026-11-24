@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0 - 2026-11-24
+
+- Added **MCP Tool Rug-Pull Lockfile** (`MCP-008`, `skillforge audit-mcp --pin-lock` / `--verify-lock`) pinning deterministic SHA-256 digests of MCP server commands, endpoints, and embedded tool schemas (`mcp-lock.json`) to detect post-install mutations.
+- Added **MCP 2026-07-28 Remote Transport & OAuth 2.1 Checks** (`MCP-009` blocking unencrypted non-localhost `http://`/`ws://` endpoints; `MCP-010` flagging hardcoded `Authorization` / `X-API-Key` headers and deprecated OAuth Dynamic Client Registration).
+- Added **OWASP Agentic Top 10 (2026) `ASI01`–`ASI10` Compliance Mapping** across `AuditFinding.owasp_asi`, JSON/terminal reports, OASIS SARIF v2.1.0 rule/result tags, and CycloneDX v1.6 AIBOM vulnerabilities (including real-time MCP server vulnerability scoring in `skillforge sbom`).
+- Added **Strict `agentskills.io` Specification Mode** (`skillforge validate --strict-spec`) enforcing lowercase hyphen-only names, directory name alignment, 5,000-token / 500-line body caps, and string-only metadata values.
+- Added **Agent Session `PreToolUse` Security Hook** (`skillforge hooks --init` and `--check-payload`) installing and running `MCPFirewall` tool-invocation guards in `.claude/settings.json`.
+- Expanded workspace/global skill discovery, `scan-all`, `lint-context`, and `SEC-013` memory poisoning rules to cover `.opencode/skills`, `.roo/skills`, `.codex/skills`, `GEMINI.md`, `.roomodes`, and `.claude/settings.json`, and upgraded the composite GitHub Action (`action.yml`) with `policy`, `audit-mcp`, `mcp-lock`, `sync-rules-check`, and `lint-context` inputs.
+
 ## 0.8.0 - 2026-11-18
 
 - Added asymmetric **Ed25519** keypair generation, signing, and verification across skill packages, `skillforge.lock`, and SLSA v1.0 `in-toto` provenance (`skillforge keygen --algorithm ed25519`, `skillforge sign --algorithm ed25519`, `skillforge provenance --algorithm ed25519 --key-file`, `skillforge verify-provenance --key-file`).

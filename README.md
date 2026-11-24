@@ -587,11 +587,27 @@ Track local MCP server usage (`get_skill`, `get_skill_resource`), token loading 
 skillforge telemetry
 ```
 
+### 31. MCP Rug-Pull Lockfile, Strict Spec & `PreToolUse` Hooks (`audit-mcp --pin-lock`, `validate --strict-spec`, `hooks`)
+
+Pin MCP server commands and tool schemas against post-install rug-pulls (`MCP-008`), audit remote OAuth 2.1 / TLS rules (`MCP-009`, `MCP-010`), enforce strict `agentskills.io` conformance, and install `PreToolUse` session guards:
+
+```bash
+# Pin MCP server & tool schema SHA-256 digests and verify in CI
+skillforge audit-mcp ./mcp.json --pin-lock ./mcp-lock.json
+skillforge audit-mcp ./mcp.json --verify-lock ./mcp-lock.json
+
+# Validate strict agentskills.io specification limits
+skillforge validate ./skills/my-skill --strict-spec
+
+# Install PreToolUse runtime security guard hook into .claude/settings.json
+skillforge hooks . --init
+```
+
 ---
 
 ## Automate in CI/CD (GitHub Action)
 
-Add SkillForge to your GitHub Actions workflow to audit pull requests, enforce token budgets, and upload SARIF reports to GitHub Code Scanning:
+Add SkillForge to your GitHub Actions workflow to audit pull requests, enforce `.skillforge-policy.yaml` gates, verify `mcp-lock.json` against rug-pulls, check context rule drift, and upload OWASP `ASI01`–`ASI10` tagged SARIF reports to GitHub Code Scanning:
 
 ```yaml
 name: Audit Agent Skills
@@ -606,11 +622,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run SkillForge Security & Token Linter
-        uses: gintingism/skillforge@main
+        uses: gintingism/skillforge@v0.9.0
         with:
-          path: './skills'
-          strict: 'true'
-          budget: 'true'
+          path: '.'
+          policy: '.skillforge-policy.yaml'
+          audit-mcp: 'mcp.json'
+          sync-rules-check: 'true'
+          lint-context: 'true'
           sarif: 'skillforge-findings.sarif'
 
       - name: Upload SARIF to GitHub Code Scanning

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from skillforge import __version__
-from skillforge.security import Severity, SkillAuditor
+from skillforge.security import AuditFinding, AuditReport, Severity, SkillAuditor, audit_mcp_config
 from skillforge.skill import SkillPackage
 
 
@@ -78,7 +78,7 @@ def _severity_to_cyclonedx(sev: Severity) -> str:
 
 
 def _discover_mcp_components(project_root: Path) -> list[dict[str, Any]]:
-    """Discover MCP servers declared in mcp.json or .cursor/mcp.json."""
+    """Discover MCP servers declared in mcp.json or .cursor/mcp.json and audit their security."""
     candidates = (
         project_root / "mcp.json",
         project_root / ".cursor" / "mcp.json",
@@ -93,7 +93,8 @@ def _discover_mcp_components(project_root: Path) -> list[dict[str, Any]]:
             continue
         try:
             raw = json.loads(candidate.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+            mcp_report = audit_mcp_config(candidate)
+        except Exception:
             continue
         if not isinstance(raw, dict):
             continue
@@ -106,17 +107,25 @@ def _discover_mcp_components(project_root: Path) -> list[dict[str, Any]]:
                 continue
             seen_names.add(srv_name)
             cmd = str(srv_cfg.get("command", ""))
+            url = str(srv_cfg.get("url", srv_cfg.get("endpoint", "")))
             args = srv_cfg.get("args", [])
             arg_str = " ".join(str(a) for a in args) if isinstance(args, list) else ""
-            raw_spec = f"{srv_name}:{cmd}:{arg_str}".encode("utf-8")
+            raw_spec = f"{srv_name}:{cmd}:{arg_str}:{url}".encode("utf-8")
             digest = hashlib.sha256(raw_spec).hexdigest()
+            srv_findings: list[AuditFinding] = [
+                f for f in mcp_report.findings
+                if f.file.endswith(f"::{srv_name}") or f.rule_id in ("MCP-006", "MCP-007")
+            ]
+            srv_score = AuditReport(target=srv_name, findings=srv_findings).score
             mcp_items.append(
                 {
                     "name": srv_name,
-                    "command": cmd,
+                    "command": cmd or url,
                     "args": arg_str,
                     "sha256": digest,
                     "source_file": candidate.relative_to(project_root).as_posix(),
+                    "audit_score": srv_score,
+                    "findings": srv_findings,
                 }
             )
     return mcp_items
@@ -200,20 +209,21 @@ def generate_sbom(
         cdx_dependencies.append({"ref": bom_ref, "dependsOn": dep_refs})
 
         for finding in audit_report.findings:
-            cdx_vulnerabilities.append(
-                {
-                    "id": finding.rule_id,
-                    "source": {"name": "SkillForge Security Auditor"},
-                    "ratings": [
-                        {
-                            "severity": _severity_to_cyclonedx(finding.severity),
-                            "method": "other",
-                        }
-                    ],
-                    "description": finding.message,
-                    "affects": [{"ref": bom_ref}],
-                }
-            )
+            vuln_entry: dict[str, Any] = {
+                "id": finding.rule_id,
+                "source": {"name": "SkillForge Security Auditor"},
+                "ratings": [
+                    {
+                        "severity": _severity_to_cyclonedx(finding.severity),
+                        "method": "other",
+                    }
+                ],
+                "description": finding.message,
+                "affects": [{"ref": bom_ref}],
+            }
+            if finding.owasp_asi:
+                vuln_entry["properties"] = [{"name": "owasp:asi", "value": finding.owasp_asi}]
+            cdx_vulnerabilities.append(vuln_entry)
 
         spdx_packages.append(
             {
@@ -248,6 +258,8 @@ def generate_sbom(
         for mcp_srv in _discover_mcp_components(project_root):
             srv_name = mcp_srv["name"]
             srv_sha = mcp_srv["sha256"]
+            srv_findings: list[AuditFinding] = mcp_srv["findings"]
+            srv_score: int = mcp_srv["audit_score"]
             bom_ref = f"pkg:mcp/{srv_name}@local"
             summaries.append(
                 SBOMComponentSummary(
@@ -259,8 +271,8 @@ def generate_sbom(
                     license_id=None,
                     pointer_tokens=0,
                     body_tokens=0,
-                    audit_score=100,
-                    finding_count=0,
+                    audit_score=srv_score,
+                    finding_count=len(srv_findings),
                 )
             )
             cdx_components.append(
@@ -275,9 +287,26 @@ def generate_sbom(
                         {"name": "skillforge:component_kind", "value": "mcp-server"},
                         {"name": "skillforge:command", "value": mcp_srv["command"]},
                         {"name": "skillforge:source_file", "value": mcp_srv["source_file"]},
+                        {"name": "skillforge:audit_score", "value": str(srv_score)},
                     ],
                 }
             )
+            for finding in srv_findings:
+                mcp_vuln: dict[str, Any] = {
+                    "id": finding.rule_id,
+                    "source": {"name": "SkillForge Security Auditor"},
+                    "ratings": [
+                        {
+                            "severity": _severity_to_cyclonedx(finding.severity),
+                            "method": "other",
+                        }
+                    ],
+                    "description": finding.message,
+                    "affects": [{"ref": bom_ref}],
+                }
+                if finding.owasp_asi:
+                    mcp_vuln["properties"] = [{"name": "owasp:asi", "value": finding.owasp_asi}]
+                cdx_vulnerabilities.append(mcp_vuln)
 
     # Deterministic UUID5 based on component hashes so identical inputs produce stable serials
     seed_hash = hashlib.sha256(

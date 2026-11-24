@@ -19,7 +19,7 @@ from .mcp_server import run_mcp_server
 from .openapi import import_openapi
 from .optimizer import optimize_skill
 from .registry import BuiltinRegistry, CompositeRegistry, GitRemoteRegistry, LocalRegistry, Registry
-from .security import Severity, SkillAuditor, audit_mcp_config, audit_path
+from .security import Severity, SkillAuditor, audit_mcp_config, audit_path, pin_mcp_config
 from .skill import Skill, SkillPackage
 
 app = typer.Typer(help="Universal package manager, security auditor, and MCP server for portable agent skills.")
@@ -34,11 +34,17 @@ def _registry(path: Path) -> Registry:
 @app.command()
 def validate(
     path: Path,
+    strict_spec: bool = typer.Option(False, "--strict-spec", help="Enforce strict agentskills.io specification limits."),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
 ) -> None:
     """Validate a SKILL.md file or skill directory against the portable specification."""
     try:
         skill = Skill.load(path)
+        source_dir = path.resolve() if path.is_dir() else (path.resolve().parent if path.name == "SKILL.md" else None)
+        if strict_spec:
+            issues = skill.validate_strict_spec(source_dir=source_dir)
+            if issues:
+                raise SkillForgeError("; ".join(issues))
     except SkillForgeError as exc:
         if json_output:
             typer.echo(json.dumps({"valid": False, "path": str(path), "error": str(exc)}))
@@ -115,13 +121,19 @@ def audit(
 @app.command("audit-mcp")
 def audit_mcp(
     path: Path = typer.Argument(Path("mcp.json"), help="Path to mcp.json or claude_desktop_config.json file."),
+    pin_lock: Path | None = typer.Option(None, "--pin-lock", help="Write pinned MCP server & tool schema hashes to lockfile."),
+    verify_lock: Path | None = typer.Option(None, "--verify-lock", help="Verify MCP config against pinned mcp-lock.json to detect rug-pulls (MCP-008)."),
     strict: bool = typer.Option(False, "--strict", help="Fail on any warning or low-severity finding."),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
     sarif_output: Path | None = typer.Option(None, "--sarif", help="Emit OASIS SARIF v2.1.0 report for GitHub Code Scanning."),
 ) -> None:
-    """Audit an MCP configuration file for plaintext secrets, shell command wrappers, and unpinned packages."""
+    """Audit an MCP configuration file for plaintext secrets, shell command wrappers, unpinned packages, and rug-pulls."""
     try:
-        report = audit_mcp_config(path)
+        if pin_lock is not None:
+            written_lock = pin_mcp_config(path, lock_path=pin_lock)
+            if not json_output:
+                typer.echo(f"Pinned MCP server & tool fingerprints to {written_lock}")
+        report = audit_mcp_config(path, lock_path=verify_lock)
     except (SkillForgeError, OSError) as exc:
         if json_output:
             typer.echo(json.dumps({"passed": False, "error": str(exc)}))
@@ -719,8 +731,12 @@ def _discover_packages(
     if global_scope:
         global_roots = (
             Path.home() / ".gemini" / "config" / "skills",
+            Path.home() / ".gemini" / "skills",
             Path.home() / ".claude" / "skills",
             Path.home() / ".cursor" / "skills",
+            Path.home() / ".opencode" / "skills",
+            Path.home() / ".roo" / "skills",
+            Path.home() / ".codex" / "skills",
             Path.home() / ".agents" / "skills",
         )
         for root in global_roots:
@@ -755,6 +771,9 @@ def _discover_packages(
         target / ".gemini" / "config" / "skills",
         target / ".windsurf" / "skills",
         target / ".cline" / "skills",
+        target / ".opencode" / "skills",
+        target / ".roo" / "skills",
+        target / ".codex" / "skills",
         target / "skills",
         target / ".agents" / "skills",
         target / ".skillforge",
@@ -1744,6 +1763,93 @@ def telemetry_command(
         typer.echo(json.dumps(summary, indent=2))
     else:
         typer.echo(render_telemetry_report(summary))
+
+
+@app.command("hooks")
+def hooks_command(
+    project: Path = typer.Argument(Path("."), help="Target project root."),
+    init: bool = typer.Option(False, "--init", help="Install PreToolUse security guard hook in .claude/settings.json."),
+    check_payload: str | None = typer.Option(None, "--check-payload", help="Inspect a JSON tool-call payload against MCP firewall rules."),
+    json_output: bool = typer.Option(False, "--json", help="Emit result as JSON."),
+) -> None:
+    """Install or execute PreToolUse agent session security hooks (Claude Code / Agent SDK)."""
+    from .mcp_firewall import MCPFirewall
+
+    if check_payload is not None:
+        fw = MCPFirewall()
+        try:
+            parsed = json.loads(check_payload)
+        except json.JSONDecodeError as exc:
+            raise typer.Exit(code=1) from exc
+        req_msg = (
+            parsed
+            if isinstance(parsed, dict) and "method" in parsed
+            else {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": parsed if isinstance(parsed, dict) else {"raw": parsed}}
+        )
+        decision = fw.inspect_request(req_msg)
+        out = {
+            "passed": decision.action != "BLOCK",
+            "action": decision.action,
+            "violations": [
+                {"rule_id": v.rule_id, "severity": v.severity, "message": v.message, "field_path": v.field_path}
+                for v in decision.violations
+            ],
+        }
+        if json_output:
+            typer.echo(json.dumps(out))
+        else:
+            typer.echo(f"Hook Check: {decision.action} ({len(decision.violations)} violation(s))")
+        if decision.action == "BLOCK":
+            raise typer.Exit(code=2)
+        return
+
+    if init:
+        claude_dir = project / ".claude"
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        settings_path = claude_dir / "settings.json"
+        existing: dict[str, Any] = {}
+        if settings_path.is_file():
+            try:
+                loaded = json.loads(settings_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    existing = loaded
+            except json.JSONDecodeError:
+                existing = {}
+
+        hooks_obj = existing.setdefault("hooks", {})
+        if not isinstance(hooks_obj, dict):
+            hooks_obj = {}
+            existing["hooks"] = hooks_obj
+        pre_list = hooks_obj.setdefault("PreToolUse", [])
+        if not isinstance(pre_list, list):
+            pre_list = []
+            hooks_obj["PreToolUse"] = pre_list
+
+        hook_cmd = "skillforge hooks --check-payload \"$CLAUDE_TOOL_INPUT\""
+        already_installed = any(
+            isinstance(entry, dict)
+            and any(
+                isinstance(h, dict) and h.get("command") == hook_cmd
+                for h in (entry.get("hooks") or [])
+            )
+            for entry in pre_list
+        )
+        if not already_installed:
+            pre_list.append(
+                {
+                    "matcher": "Bash|Write|Edit|MultiEdit",
+                    "hooks": [{"type": "command", "command": hook_cmd}],
+                }
+            )
+        settings_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
+        if json_output:
+            typer.echo(json.dumps({"installed": True, "settings_path": str(settings_path)}))
+        else:
+            typer.echo(f"Installed PreToolUse security guard hook in {settings_path}")
+        return
+
+    typer.echo("Specify --init to install PreToolUse hooks or --check-payload '<json>' to inspect a tool invocation.", err=True)
+    raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

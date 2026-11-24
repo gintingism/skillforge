@@ -37,7 +37,13 @@ Common attack vectors in community-shared skills include:
 | **`MCP-001`** | **CRITICAL / HIGH** | MCP Plaintext Secret | Detects hardcoded API tokens or embedded secret strings in MCP configuration environment variables. |
 | **`MCP-002`** | **HIGH** | MCP Shell Wrapper | Flags arbitrary shell interpreter wrappers (`bash -c`, `sh -c`, `powershell`) declared in MCP server command fields. |
 | **`MCP-003`** | **MEDIUM** | MCP Unpinned Package | Flags unpinned package executions (`npx`, `uvx`) lacking exact `@version` tags in MCP server arguments. |
-| **`MCP-004`** | **HIGH** | MCP Root Filesystem Grant | Flags permissive root filesystem (`/`, `C:\`, `~`, `$HOME`) directory exposure in MCP arguments. |
+| **`MCP-004`** | **HIGH** | MCP Root Filesystem Grant | Flags permissive root filesystem (`/`, `C:\`, `~`, `$HOME`) directory exposure in MCP arguments (OWASP ASI03). |
+| **`MCP-005`** | **CRITICAL** | MCP Tool Poisoning | Detects hidden prompt injection, stealth instructions, or secret harvesting inside MCP tool descriptions or schemas (OWASP ASI01). |
+| **`MCP-006`** | **HIGH** | MCP Tool Shadowing | Detects duplicate tool names across multiple MCP servers or overriding protected built-in tools (OWASP ASI04). |
+| **`MCP-007`** | **HIGH** | MCP Cross-Server Toxic Flow | Flags multi-server setups uniting untrusted external ingestion, sensitive local/DB access, and external egress (OWASP ASI02). |
+| **`MCP-008`** | **CRITICAL / HIGH** | MCP Rug-Pull Drift | Verifies `mcp.json` against `mcp-lock.json` (`--pin-lock` / `--verify-lock`) to catch post-install command or tool schema mutations (OWASP ASI04). |
+| **`MCP-009`** | **HIGH** | Insecure Remote MCP URL | Flags unencrypted non-localhost `http://` or `ws://` remote MCP endpoints per MCP `2026-07-28` transport spec (OWASP ASI03). |
+| **`MCP-010`** | **HIGH / MEDIUM** | Static Bearer / Deprecated DCR | Flags hardcoded `Authorization` / `X-API-Key` headers and deprecated OAuth Dynamic Client Registration in favor of CIMD (OWASP ASI03). |
 | **`QUAL-001`** | **LOW** | Trigger Quality | Verifies whether the skill description includes explicit activation triggers (`when`, `use when`, `for`) necessary for token-efficient progressive disclosure. |
 | **`QUAL-002`** | **MEDIUM** | Spec Compliance | Ensures directory name matches the `name` field in YAML frontmatter and validates identifier safety. |
 | **`QUAL-003`** | **LOW** | Context Budget Limit | Flags `SKILL.md` bodies exceeding 500 lines or ~5,000 tokens so reference docs are extracted into `references/`. |

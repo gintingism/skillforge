@@ -30,6 +30,37 @@ class Severity(str, Enum):
     INFO = "INFO"
 
 
+OWASP_ASI_MAP: dict[str, str] = {
+    "SEC-001": "ASI01:Agent-Goal-Hijacking",
+    "SEC-002": "ASI01:Agent-Goal-Hijacking",
+    "SEC-003": "ASI02:Tool-Misuse-and-Exploitation",
+    "SEC-004": "ASI03:Identity-and-Privilege-Abuse",
+    "SEC-005": "ASI02:Tool-Misuse-and-Exploitation",
+    "SEC-006": "ASI03:Identity-and-Privilege-Abuse",
+    "SEC-007": "ASI01:Agent-Goal-Hijacking",
+    "SEC-008": "ASI05:Unexpected-Code-Execution",
+    "SEC-009": "ASI03:Identity-and-Privilege-Abuse",
+    "SEC-010": "ASI04:Agentic-Supply-Chain-Vulnerabilities",
+    "SEC-011": "ASI04:Agentic-Supply-Chain-Vulnerabilities",
+    "SEC-012": "ASI03:Identity-and-Privilege-Abuse",
+    "SEC-013": "ASI06:Memory-and-Context-Poisoning",
+    "SEC-014": "ASI02:Tool-Misuse-and-Exploitation",
+    "SEC-015": "ASI05:Unexpected-Code-Execution",
+    "SEC-016": "ASI08:Cascading-Failures-and-Resource-Exhaustion",
+    "SEC-017": "ASI04:Agentic-Supply-Chain-Vulnerabilities",
+    "MCP-001": "ASI03:Identity-and-Privilege-Abuse",
+    "MCP-002": "ASI05:Unexpected-Code-Execution",
+    "MCP-003": "ASI04:Agentic-Supply-Chain-Vulnerabilities",
+    "MCP-004": "ASI03:Identity-and-Privilege-Abuse",
+    "MCP-005": "ASI01:Agent-Goal-Hijacking",
+    "MCP-006": "ASI04:Agentic-Supply-Chain-Vulnerabilities",
+    "MCP-007": "ASI02:Tool-Misuse-and-Exploitation",
+    "MCP-008": "ASI04:Agentic-Supply-Chain-Vulnerabilities",
+    "MCP-009": "ASI03:Identity-and-Privilege-Abuse",
+    "MCP-010": "ASI03:Identity-and-Privilege-Abuse",
+}
+
+
 @dataclass(frozen=True, slots=True)
 class AuditFinding:
     """A specific security or quality finding."""
@@ -40,6 +71,11 @@ class AuditFinding:
     file: str
     line: int | None = None
     snippet: str | None = None
+
+    @property
+    def owasp_asi(self) -> str | None:
+        """Return mapped OWASP Agentic Top 10 (2026) category if applicable."""
+        return OWASP_ASI_MAP.get(self.rule_id.upper())
 
 
 @dataclass
@@ -92,6 +128,7 @@ class AuditReport:
                     "file": f.file,
                     "line": f.line,
                     "snippet": f.snippet,
+                    "owasp_asi": f.owasp_asi,
                 }
                 for f in self.findings
             ],
@@ -110,7 +147,8 @@ class AuditReport:
             lines.append("\nFindings:")
             for f in self.findings:
                 location = f"{f.file}:{f.line}" if f.line else f.file
-                lines.append(f"  [{f.severity.value}] {f.rule_id} ({location}): {f.message}")
+                asi_badge = f" [{f.owasp_asi}]" if f.owasp_asi else ""
+                lines.append(f"  [{f.severity.value}] {f.rule_id}{asi_badge} ({location}): {f.message}")
                 if f.snippet:
                     lines.append(f"      Snippet: {f.snippet.strip()}")
         return "\n".join(lines)
@@ -142,6 +180,9 @@ class AuditReport:
             "MCP-005": ("MCP Tool Poisoning Directive", "Detects hidden prompt injection, secret harvesting, or stealth instructions embedded inside MCP tool descriptions or schemas."),
             "MCP-006": ("MCP Cross-Server Tool Shadowing", "Detects duplicate tool names declared across multiple MCP servers or shadowing built-in agent tools."),
             "MCP-007": ("MCP Cross-Server Toxic Flow", "Detects toxic multi-server combinations uniting untrusted external ingestion, sensitive local data access, and external network egress."),
+            "MCP-008": ("MCP Tool Schema Rug-Pull Drift", "Detects post-install modifications to MCP server commands, arguments, or tool schemas against a pinned lockfile."),
+            "MCP-009": ("Insecure Remote MCP Transport", "Detects unencrypted non-localhost http:// or ws:// remote MCP server URLs violating MCP 2026-07-28 transport rules."),
+            "MCP-010": ("Hardcoded Bearer Token or Deprecated DCR in MCP Auth", "Detects static Authorization Bearer tokens in MCP headers or deprecated Dynamic Client Registration usage."),
             "QUAL-008": ("Metadata Value Types", "Checks that metadata maps string keys to string values as the agentskills.io spec requires."),
             "QUAL-001": ("Trigger Quality", "Checks whether skill descriptions include explicit activation conditions."),
             "QUAL-002": ("Directory Alignment", "Checks whether directory name matches frontmatter name."),
@@ -153,6 +194,10 @@ class AuditReport:
         }
         sarif_rules: list[dict[str, Any]] = []
         for rid, (rname, rdesc) in sorted(rule_meta.items()):
+            tags = ["security", "agentic-ai"] if rid.startswith(("SEC", "MCP")) else ["quality"]
+            asi_tag = OWASP_ASI_MAP.get(rid)
+            if asi_tag:
+                tags.append(f"OWASP-{asi_tag}")
             sarif_rules.append({
                 "id": rid,
                 "name": rname,
@@ -160,6 +205,7 @@ class AuditReport:
                 "defaultConfiguration": {
                     "level": "error" if rid.startswith("SEC") else "warning"
                 },
+                "properties": {"tags": tags},
             })
 
         results: list[dict[str, Any]] = []
@@ -180,12 +226,15 @@ class AuditReport:
                     region["snippet"] = {"text": f.snippet.strip()}
                 loc["physicalLocation"]["region"] = region
 
-            results.append({
+            res_entry: dict[str, Any] = {
                 "ruleId": f.rule_id,
                 "level": level,
                 "message": {"text": f.message},
                 "locations": [loc],
-            })
+            }
+            if f.owasp_asi:
+                res_entry["properties"] = {"owasp_asi": f.owasp_asi}
+            results.append(res_entry)
 
         return {
             "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
@@ -330,7 +379,7 @@ _MARKDOWN_INSTALLER_PATTERNS: list[re.Pattern[str]] = [
 ]
 _MEMORY_POISONING_PATTERNS: list[re.Pattern[str]] = [
     re.compile(
-        r"(?i)(?:>>|>|\|\s*tee(?:\s+-a)?)\s*[\"']?(?:~\/|\$HOME\/|\.\.?\/)*(?:CLAUDE\.md|AGENTS\.md|MEMORY\.md|\.cursorrules|\.windsurfrules|\.clinerules|\.github\/copilot-instructions\.md|\.bashrc|\.zshrc|\.profile|\.git\/hooks\/[a-z0-9_-]+)\b"
+        r"(?i)(?:>>|>|\|\s*tee(?:\s+-a)?)\s*[\"']?(?:~\/|\$HOME\/|\.\.?\/)*(?:CLAUDE\.md|AGENTS\.md|GEMINI\.md|MEMORY\.md|\.cursorrules|\.windsurfrules|\.clinerules|\.roomodes|\.claude\/settings\.json|\.github\/copilot-instructions\.md|\.bashrc|\.zshrc|\.profile|\.git\/hooks\/[a-z0-9_-]+)\b"
     ),
 ]
 _TRIFECTA_PRIVATE_DATA = re.compile(
@@ -1270,6 +1319,9 @@ def _discover_collection_packages(root: Path) -> list[SkillPackage]:
         root / ".gemini" / "config" / "skills",
         root / ".windsurf" / "skills",
         root / ".cline" / "skills",
+        root / ".opencode" / "skills",
+        root / ".roo" / "skills",
+        root / ".codex" / "skills",
         root / ".agents" / "skills",
         root / ".skillforge",
         root / "src" / "skillforge" / "builtin_skills",
@@ -1328,10 +1380,159 @@ def audit_path(path: Path, *, sandbox: bool = False) -> AuditReport:
     return auditor.audit_file_or_dir(path, sandbox=sandbox)
 
 
-def audit_mcp_config(path: Path) -> AuditReport:
-    """Audit an MCP configuration file (mcp.json or claude_desktop_config.json) for security risks."""
-    import json
+def _compute_mcp_server_fingerprints(servers: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Compute deterministic SHA-256 digests for MCP servers and their declared tools."""
+    import hashlib
 
+    locked_servers: dict[str, dict[str, Any]] = {}
+    for s_name, s_cfg in sorted(servers.items()):
+        if not isinstance(s_cfg, dict):
+            continue
+        cmd = str(s_cfg.get("command", "")).strip()
+        args = [str(a) for a in s_cfg.get("args", [])] if isinstance(s_cfg.get("args"), list) else []
+        url = str(s_cfg.get("url", s_cfg.get("endpoint", ""))).strip()
+        desc = str(s_cfg.get("description", "")).strip()
+
+        tool_hashes: dict[str, str] = {}
+        tools_list = s_cfg.get("tools", [])
+        if isinstance(tools_list, list):
+            for t in tools_list:
+                if not isinstance(t, dict):
+                    continue
+                t_name = str(t.get("name", "")).strip()
+                if not t_name:
+                    continue
+                t_canonical = json.dumps(
+                    {
+                        "name": t_name,
+                        "description": str(t.get("description", "")),
+                        "inputSchema": t.get("inputSchema", {}),
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+                tool_hashes[t_name] = hashlib.sha256(t_canonical).hexdigest()
+
+        server_canonical = json.dumps(
+            {
+                "command": cmd,
+                "args": args,
+                "url": url,
+                "description": desc,
+                "tools": dict(sorted(tool_hashes.items())),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        locked_servers[s_name] = {
+            "sha256": hashlib.sha256(server_canonical).hexdigest(),
+            "command": cmd,
+            "args": args,
+            "url": url,
+            "tools": dict(sorted(tool_hashes.items())),
+        }
+    return locked_servers
+
+
+def _extract_mcp_servers(data: Any) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        return {}
+    if "mcpServers" in data and isinstance(data["mcpServers"], dict):
+        return data["mcpServers"]
+    return {
+        k: v
+        for k, v in data.items()
+        if isinstance(v, dict) and any(field in v for field in ("command", "url", "endpoint"))
+    }
+
+
+def pin_mcp_config(config_path: Path, lock_path: Path | None = None) -> Path:
+    """Write a cryptographic tool and command lockfile (mcp-lock.json) for an MCP config."""
+    if not config_path.is_file():
+        raise SecurityAuditError(f"MCP configuration file not found: {config_path}")
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise SecurityAuditError(f"Failed to parse MCP configuration JSON: {exc}") from exc
+
+    servers = _extract_mcp_servers(data)
+    fingerprints = _compute_mcp_server_fingerprints(servers)
+    dest = lock_path or (config_path.parent / "mcp-lock.json")
+    payload = {
+        "version": "1.0",
+        "source": config_path.name,
+        "servers": fingerprints,
+    }
+    dest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return dest
+
+
+def verify_mcp_lock(config_path: Path, lock_path: Path) -> list[AuditFinding]:
+    """Compare current MCP config against a pinned mcp-lock.json and emit MCP-008 findings on drift."""
+    target_name = config_path.name or str(config_path)
+    if not lock_path.is_file():
+        raise SecurityAuditError(f"MCP lockfile not found: {lock_path}")
+    try:
+        lock_data = json.loads(lock_path.read_text(encoding="utf-8"))
+        cfg_data = json.loads(config_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise SecurityAuditError(f"Failed to parse MCP config or lockfile JSON: {exc}") from exc
+
+    pinned_servers = lock_data.get("servers", {}) if isinstance(lock_data, dict) else {}
+    current_servers = _compute_mcp_server_fingerprints(_extract_mcp_servers(cfg_data))
+    findings: list[AuditFinding] = []
+
+    for s_name, cur in sorted(current_servers.items()):
+        s_file = f"{target_name}::{s_name}"
+        if s_name not in pinned_servers:
+            findings.append(
+                AuditFinding(
+                    rule_id="MCP-008",
+                    severity=Severity.HIGH,
+                    message=f"Unpinned MCP server '{s_name}' added after lockfile generation",
+                    file=s_file,
+                )
+            )
+            continue
+        pin = pinned_servers[s_name]
+        if cur.get("command") != pin.get("command") or cur.get("args") != pin.get("args") or cur.get("url") != pin.get("url"):
+            findings.append(
+                AuditFinding(
+                    rule_id="MCP-008",
+                    severity=Severity.CRITICAL,
+                    message=f"MCP rug-pull detected: server '{s_name}' invocation or endpoint changed since lockfile pin",
+                    file=s_file,
+                    snippet=f"pinned={pin.get('command') or pin.get('url')} current={cur.get('command') or cur.get('url')}",
+                )
+            )
+        pin_tools = pin.get("tools", {}) if isinstance(pin.get("tools"), dict) else {}
+        cur_tools = cur.get("tools", {}) if isinstance(cur.get("tools"), dict) else {}
+        for t_name, t_hash in sorted(cur_tools.items()):
+            if t_name not in pin_tools:
+                findings.append(
+                    AuditFinding(
+                        rule_id="MCP-008",
+                        severity=Severity.HIGH,
+                        message=f"MCP rug-pull drift: new unpinned tool '{t_name}' appeared on server '{s_name}'",
+                        file=s_file,
+                        snippet=f"tool: {t_name}",
+                    )
+                )
+            elif pin_tools[t_name] != t_hash:
+                findings.append(
+                    AuditFinding(
+                        rule_id="MCP-008",
+                        severity=Severity.CRITICAL,
+                        message=f"MCP tool schema/description rug-pull: tool '{t_name}' on server '{s_name}' modified after pin",
+                        file=s_file,
+                        snippet=f"tool '{t_name}' sha256 mismatch",
+                    )
+                )
+    return findings
+
+
+def audit_mcp_config(path: Path, *, lock_path: Path | None = None) -> AuditReport:
+    """Audit an MCP configuration file (mcp.json or claude_desktop_config.json) for security risks."""
     target_name = path.name or str(path)
     if not path.is_file():
         raise SecurityAuditError(f"MCP configuration file not found: {path}")
@@ -1341,14 +1542,7 @@ def audit_mcp_config(path: Path) -> AuditReport:
     except Exception as exc:
         raise SecurityAuditError(f"Failed to parse MCP configuration JSON: {exc}") from exc
 
-    servers: dict[str, Any] = {}
-    if isinstance(data, dict):
-        if "mcpServers" in data and isinstance(data["mcpServers"], dict):
-            servers = data["mcpServers"]
-        else:
-            servers = {
-                k: v for k, v in data.items() if isinstance(v, dict) and "command" in v
-            }
+    servers = _extract_mcp_servers(data)
 
     findings: list[AuditFinding] = []
     dangerous_shells = frozenset({"bash", "sh", "cmd", "cmd.exe", "powershell", "pwsh"})
@@ -1380,9 +1574,66 @@ def audit_mcp_config(path: Path) -> AuditReport:
         env_map = (
             s_cfg.get("env", {}) if isinstance(s_cfg.get("env"), dict) else {}
         )
+        remote_url = str(s_cfg.get("url", s_cfg.get("endpoint", ""))).strip()
+        headers_map = s_cfg.get("headers", {}) if isinstance(s_cfg.get("headers"), dict) else {}
+        auth_cfg = s_cfg.get("auth", s_cfg.get("oauth", {}))
+        auth_map = auth_cfg if isinstance(auth_cfg, dict) else {}
+
+        # MCP-009: Insecure non-TLS remote MCP URL (MCP 2026-07-28 transport security)
+        if remote_url:
+            parsed_url = urlparse(remote_url)
+            scheme = (parsed_url.scheme or "").lower()
+            host = (parsed_url.hostname or "").lower()
+            if scheme in ("http", "ws") and host not in ("localhost", "127.0.0.1", "::1"):
+                findings.append(
+                    AuditFinding(
+                        rule_id="MCP-009",
+                        severity=Severity.HIGH,
+                        message=(
+                            f"Insecure remote MCP transport on server '{s_name}': '{remote_url}' "
+                            "uses unencrypted HTTP/WS on a non-localhost host (require HTTPS/WSS)"
+                        ),
+                        file=s_file,
+                        snippet=f'url: "{remote_url}"',
+                    )
+                )
+
+        # MCP-010: Hardcoded Bearer/API token in headers or deprecated Dynamic Client Registration
+        for h_key, h_val in headers_map.items():
+            if not isinstance(h_val, str):
+                continue
+            val_strip = h_val.strip()
+            if val_strip.startswith(("$", "%", "{")) or "${" in val_strip:
+                continue
+            if h_key.lower() in ("authorization", "x-api-key", "api-key") and len(val_strip) >= 12:
+                findings.append(
+                    AuditFinding(
+                        rule_id="MCP-010",
+                        severity=Severity.HIGH,
+                        message=(
+                            f"Static credential in MCP header '{h_key}' on server '{s_name}' "
+                            "(use OAuth 2.1 short-lived tokens or environment variable substitution)"
+                        ),
+                        file=s_file,
+                        snippet=f'"{h_key}": "{val_strip[:14]}..."',
+                    )
+                )
+        if auth_map.get("dynamic_client_registration") is True or str(auth_map.get("registration", "")).lower() == "dcr":
+            findings.append(
+                AuditFinding(
+                    rule_id="MCP-010",
+                    severity=Severity.MEDIUM,
+                    message=(
+                        f"Server '{s_name}' enables deprecated OAuth Dynamic Client Registration (DCR); "
+                        "prefer Client ID Metadata Documents (CIMD) per MCP 2026-07-28 spec"
+                    ),
+                    file=s_file,
+                    snippet="dynamic_client_registration: true",
+                )
+            )
 
         # Classify server capabilities for cross-server toxic flow analysis
-        combined_text = " ".join([s_name, cmd, *args, str(s_cfg.get("description", ""))]).lower()
+        combined_text = " ".join([s_name, cmd, *args, remote_url, str(s_cfg.get("description", ""))]).lower()
         tools_list = s_cfg.get("tools", [])
         if isinstance(tools_list, list):
             for t in tools_list:
@@ -1579,5 +1830,9 @@ def audit_mcp_config(path: Path) -> AuditReport:
                     snippet=f"servers: {', '.join(sorted(server_capabilities))}",
                 )
             )
+
+    # MCP-008: Verify against pinned mcp-lock.json if requested
+    if lock_path is not None:
+        findings.extend(verify_mcp_lock(path, lock_path))
 
     return AuditReport(target=target_name, findings=findings)

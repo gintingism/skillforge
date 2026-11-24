@@ -87,6 +87,36 @@ class Skill:
         if "--" in name:
             raise SkillValidationError("Skill name must not contain consecutive hyphens ('--')")
 
+    def validate_strict_spec(self, source_dir: Path | None = None) -> list[str]:
+        """Validate strict agentskills.io open specification conformance."""
+        issues: list[str] = []
+        strict_name_re = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+        if not strict_name_re.fullmatch(self.name) or "--" in self.name:
+            issues.append(
+                f"Skill name '{self.name}' violates strict agentskills.io spec "
+                "(1-64 lowercase alphanumeric or single hyphens, no underscores or trailing hyphens)"
+            )
+        if source_dir is not None and source_dir.name != self.name:
+            issues.append(
+                f"Skill directory '{source_dir.name}' must match frontmatter name '{self.name}'"
+            )
+        if self.body_tokens > 5000:
+            issues.append(
+                f"SKILL.md body (~{self.body_tokens} tokens) exceeds agentskills.io 5000-token cap"
+            )
+        if self.body_lines > 500:
+            issues.append(
+                f"SKILL.md body ({self.body_lines} lines) exceeds agentskills.io 500-line limit"
+            )
+        for k, v in self.metadata.items():
+            if k == "dependencies":
+                continue
+            if not isinstance(k, str) or not isinstance(v, str):
+                issues.append(
+                    f"Metadata entry '{k}' must map a string key to a string value under strict spec"
+                )
+        return issues
+
     @classmethod
     def load(cls, path: Path) -> "Skill":
         """Load and validate a SKILL.md file or skill directory from disk."""
