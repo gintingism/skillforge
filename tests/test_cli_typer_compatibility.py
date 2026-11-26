@@ -1,6 +1,7 @@
 """Regression tests for the CLI boundary affected by Typer upgrades."""
 
 import json
+import re
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -10,6 +11,7 @@ from typer.testing import CliRunner
 from skillforge.cli import app
 
 runner = CliRunner()
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 @pytest.mark.parametrize(
@@ -17,10 +19,11 @@ runner = CliRunner()
 )
 def test_help_renders_without_running_commands(command: list[str]) -> None:
     result = runner.invoke(app, [*command, "--help"])
+    plain_output = _ANSI_RE.sub("", result.output)
 
     assert result.exit_code == 0, result.output
-    assert "Usage" in result.output
-    assert "--help" in result.output
+    assert "Usage" in plain_output
+    assert "--help" in plain_output
 
 
 @pytest.mark.parametrize(
