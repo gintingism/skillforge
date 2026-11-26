@@ -34,6 +34,10 @@ Common attack vectors in community-shared skills include:
 | **`SEC-015`** | **CRITICAL / HIGH** | Obfuscation & Encoded Payloads | Detects base64 pipelines, python b64decode execution, powershell encoded commands, and hex escapes (Cisco obfuscation). |
 | **`SEC-016`** | **CRITICAL** | Destructive Resource Abuse | Detects bash fork bombs (`:(){ :|:& };:`), disk exhaustion (`dd if=/dev/urandom`), and raw disk formatting (Cisco resource_abuse). |
 | **`SEC-017`** | **HIGH** | Unpinned Package Installation | Detects unpinned runtime package installations from public registries (`pip install`, `npm install -g`) without lockfiles or version constraints (Cisco supply_chain). |
+| **`SEC-018`** | **HIGH** | Whitespace Padding Bypass | Detects excessive whitespace/newline inflation (>=150 blank lines or >=8KB whitespace runs) used to push payloads past scanner truncation windows (OWASP ASI01). |
+| **`SEC-019`** | **CRITICAL / HIGH** | Precompiled Bytecode & Hidden Binaries | Detects `.pyc`, `.pyo`, `.wasm`, `.class`, `.beam`, or hidden native binaries anywhere inside a skill package including `scripts/` and `__pycache__/` (OWASP ASI04). |
+| **`SEC-020`** | **CRITICAL / HIGH** | Document/Archive & SVG Indirection | Unpacks ZIP-backed office docs/archives (`.docx`, `.xlsx`, `.pptx`, `.odt`, `.zip`) and scans `.svg` files for hidden XML prompt injections, macros, scripts, or XSS (OWASP ASI01). |
+| **`SEC-021`** | **CRITICAL / HIGH** | Cipher Obfuscation & Typosquatting | Detects `base85`/`rot13`/`chr()`-join/split-stream payload decoders and Levenshtein typosquatting against popular skill names (OWASP ASI04). |
 | **`MCP-001`** | **CRITICAL / HIGH** | MCP Plaintext Secret | Detects hardcoded API tokens or embedded secret strings in MCP configuration environment variables. |
 | **`MCP-002`** | **HIGH** | MCP Shell Wrapper | Flags arbitrary shell interpreter wrappers (`bash -c`, `sh -c`, `powershell`) declared in MCP server command fields. |
 | **`MCP-003`** | **MEDIUM** | MCP Unpinned Package | Flags unpinned package executions (`npx`, `uvx`) lacking exact `@version` tags in MCP server arguments. |
@@ -44,6 +48,16 @@ Common attack vectors in community-shared skills include:
 | **`MCP-008`** | **CRITICAL / HIGH** | MCP Rug-Pull Drift | Verifies `mcp.json` against `mcp-lock.json` (`--pin-lock` / `--verify-lock`) to catch post-install command or tool schema mutations (OWASP ASI04). |
 | **`MCP-009`** | **HIGH** | Insecure Remote MCP URL | Flags unencrypted non-localhost `http://` or `ws://` remote MCP endpoints per MCP `2026-07-28` transport spec (OWASP ASI03). |
 | **`MCP-010`** | **HIGH / MEDIUM** | Static Bearer / Deprecated DCR | Flags hardcoded `Authorization` / `X-API-Key` headers and deprecated OAuth Dynamic Client Registration in favor of CIMD (OWASP ASI03). |
+| **`MCP-011`** | **CRITICAL / HIGH** | Unsafe MCP Apps UI Resource | Detects unsafe CSP (`unsafe-inline`, `unsafe-eval`, wildcard), `allow-scripts` + `allow-same-origin` sandbox escape, wildcard `postMessage("*")`, and inline script exfiltration in `ui://` MCP Apps (OWASP ASI05). |
+| **`HOOK-001`** | **CRITICAL** | Malicious Shell Hook | Detects dangerous shell pipelines, reverse shells, or credential reads inside agent lifecycle hooks (OWASP ASI05). |
+| **`HOOK-002`** | **HIGH** | Insecure HTTP Hook | Flags unencrypted non-localhost HTTP hook endpoints or hardcoded `Authorization` headers in agent hook configs (OWASP ASI03). |
+| **`HOOK-003`** | **CRITICAL / HIGH** | Unsafe Function/Mod Hook | Flags TypeScript/JavaScript function hooks using `child_process`, `eval`, or combining `process.env` reads with outbound HTTP requests (OWASP ASI05). |
+| **`HOOK-004`** | **CRITICAL** | Prompt Hook Injection | Detects override or auto-approve injection directives inside LLM prompt hooks (OWASP ASI01). |
+| **`A2A-001`** | **HIGH** | Insecure A2A Endpoint | Flags unencrypted non-localhost `http://`/`ws://` endpoints in A2A v1.0 Agent Cards (OWASP ASI03). |
+| **`A2A-002`** | **CRITICAL / MEDIUM** | Missing/Static A2A Auth | Flags missing authentication schemes or hardcoded API keys inside Agent Card `securitySchemes` (OWASP ASI03). |
+| **`A2A-003`** | **CRITICAL / MEDIUM** | Unsigned/Invalid A2A JWS | Flags missing JWS `signatures`, `alg=none` bypasses, or invalid Ed25519 JWS signatures per A2A v1.0 §8.4 (OWASP ASI04). |
+| **`A2A-004`** | **CRITICAL** | A2A Prompt Poisoning | Detects prompt injections or invisible unicode in Agent Card descriptions or skill metadata (OWASP ASI01). |
+| **`A2A-005`** | **HIGH** | Overbroad A2A Capabilities | Flags unauthenticated `pushNotifications` or wildcard OAuth scopes `*` in Agent Cards (OWASP ASI03). |
 | **`QUAL-001`** | **LOW** | Trigger Quality | Verifies whether the skill description includes explicit activation triggers (`when`, `use when`, `for`) necessary for token-efficient progressive disclosure. |
 | **`QUAL-002`** | **MEDIUM** | Spec Compliance | Ensures directory name matches the `name` field in YAML frontmatter and validates identifier safety. |
 | **`QUAL-003`** | **LOW** | Context Budget Limit | Flags `SKILL.md` bodies exceeding 500 lines or ~5,000 tokens so reference docs are extracted into `references/`. |

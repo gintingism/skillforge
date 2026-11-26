@@ -15,6 +15,26 @@ import yaml
 from .errors import SkillParseError, SkillValidationError
 
 _SAFE_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+_CLAUDE_DYNAMIC_CMD_RE = re.compile(r"!\`[^`\n]+\`")
+
+AGENTSKILLS_SPEC_FRONTMATTER_KEYS: frozenset[str] = frozenset(
+    {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}
+)
+CLAUDE_EXTENSION_FRONTMATTER_KEYS: frozenset[str] = frozenset(
+    {
+        "disable-model-invocation",
+        "disable_model_invocation",
+        "user-invocable",
+        "argument-hint",
+        "hooks",
+        "model",
+        "effort",
+        "context",
+        "agent",
+        "paths",
+        "shell",
+    }
+)
 
 
 def estimate_tokens(text: str) -> int:
@@ -37,6 +57,7 @@ class Skill:
     metadata: dict[str, Any] = field(default_factory=dict)
     allowed_tools: str | None = None
     disable_model_invocation: bool = False
+    extra_frontmatter: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.validate_name(self.name)
@@ -88,7 +109,7 @@ class Skill:
             raise SkillValidationError("Skill name must not contain consecutive hyphens ('--')")
 
     def validate_strict_spec(self, source_dir: Path | None = None) -> list[str]:
-        """Validate strict agentskills.io open specification conformance."""
+        """Validate strict AAIF agentskills.io open specification conformance."""
         issues: list[str] = []
         strict_name_re = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
         if not strict_name_re.fullmatch(self.name) or "--" in self.name:
@@ -99,6 +120,29 @@ class Skill:
         if source_dir is not None and source_dir.name != self.name:
             issues.append(
                 f"Skill directory '{source_dir.name}' must match frontmatter name '{self.name}'"
+            )
+        if len(self.description) > 1024:
+            issues.append(
+                f"Skill description ({len(self.description)} chars) exceeds agentskills.io 1024-char limit"
+            )
+        if self.compatibility is not None and len(self.compatibility) > 500:
+            issues.append(
+                f"Skill compatibility ({len(self.compatibility)} chars) exceeds agentskills.io 500-char limit"
+            )
+        unexpected_keys = sorted(
+            k for k in self.extra_frontmatter.keys() if k not in AGENTSKILLS_SPEC_FRONTMATTER_KEYS
+        )
+        if self.disable_model_invocation and "disable-model-invocation" not in unexpected_keys and "disable_model_invocation" not in unexpected_keys:
+            unexpected_keys.append("disable-model-invocation")
+        if unexpected_keys:
+            issues.append(
+                f"Unexpected top-level frontmatter key(s): {', '.join(unexpected_keys)}. "
+                f"AAIF agentskills.io allows only 6 fields ({', '.join(sorted(AGENTSKILLS_SPEC_FRONTMATTER_KEYS))}); "
+                "move custom keys under metadata or run 'skillforge normalize'"
+            )
+        if _CLAUDE_DYNAMIC_CMD_RE.search(self.body):
+            issues.append(
+                "Body uses Claude Code dynamic command syntax (!`cmd`), which is non-portable outside Claude Code"
             )
         if self.body_tokens > 5000:
             issues.append(
@@ -116,6 +160,62 @@ class Skill:
                     f"Metadata entry '{k}' must map a string key to a string value under strict spec"
                 )
         return issues
+
+    def normalize_portable(self, *, fix_name: bool = False) -> tuple["Skill", list[str]]:
+        """Normalize a Skill to conform strictly to the 6-field AAIF agentskills.io spec."""
+        changes: list[str] = []
+        new_name = self.name
+        if fix_name and ("_" in new_name or new_name.startswith("-") or new_name.endswith("-")):
+            cleaned = re.sub(r"[^a-z0-9-]+", "-", new_name.lower().replace("_", "-")).strip("-")
+            cleaned = re.sub(r"-{2,}", "-", cleaned)[:64]
+            if cleaned and cleaned != new_name:
+                changes.append(f"Normalized skill name '{new_name}' -> '{cleaned}'")
+                new_name = cleaned
+
+        new_meta: dict[str, Any] = {}
+        for k, v in self.metadata.items():
+            key_str = str(k)
+            if isinstance(v, str):
+                new_meta[key_str] = v
+            elif isinstance(v, (list, tuple)):
+                joined = ", ".join(str(item).strip() for item in v if str(item).strip())
+                new_meta[key_str] = joined
+                changes.append(f"Converted metadata.{key_str} list to comma-separated string")
+            else:
+                new_meta[key_str] = str(v)
+                changes.append(f"Converted metadata.{key_str} value to string")
+
+        for k, v in sorted(self.extra_frontmatter.items()):
+            if k in AGENTSKILLS_SPEC_FRONTMATTER_KEYS:
+                continue
+            if k in CLAUDE_EXTENSION_FRONTMATTER_KEYS:
+                changes.append(f"Removed Claude-only frontmatter key '{k}' for cross-platform portability")
+                continue
+            if k == "allowed_tools":
+                changes.append("Normalized frontmatter key 'allowed_tools' -> 'allowed-tools'")
+                continue
+            if k not in new_meta:
+                if isinstance(v, (list, tuple)):
+                    new_meta[k] = ", ".join(str(item).strip() for item in v if str(item).strip())
+                else:
+                    new_meta[k] = str(v)
+                changes.append(f"Moved top-level frontmatter key '{k}' under metadata.{k}")
+
+        if self.disable_model_invocation and "disable-model-invocation" not in self.extra_frontmatter:
+            changes.append("Removed Claude-only frontmatter key 'disable-model-invocation' for portability")
+
+        normalized = Skill(
+            name=new_name,
+            description=self.description,
+            body=self.body,
+            license=self.license,
+            compatibility=self.compatibility,
+            metadata=new_meta,
+            allowed_tools=self.allowed_tools,
+            disable_model_invocation=False,
+            extra_frontmatter={},
+        )
+        return normalized, changes
 
     @classmethod
     def load(cls, path: Path) -> "Skill":
@@ -180,6 +280,12 @@ def parse_skill(document: str) -> Skill:
     if top_deps is not None and "dependencies" not in meta_dict:
         meta_dict["dependencies"] = top_deps
 
+    extra_fm = {
+        str(k): v
+        for k, v in raw_meta.items()
+        if str(k) not in AGENTSKILLS_SPEC_FRONTMATTER_KEYS
+    }
+
     return Skill(
         name=name,
         description=description,
@@ -189,6 +295,7 @@ def parse_skill(document: str) -> Skill:
         metadata=meta_dict,
         allowed_tools=str(allowed_tools) if allowed_tools is not None else None,
         disable_model_invocation=bool(disable_model),
+        extra_frontmatter=extra_fm,
     )
 
 
@@ -202,6 +309,7 @@ class SkillPackage:
     assets: dict[str, bytes] = field(default_factory=dict)
     source_dir: Path | None = None
     commit_sha: str | None = None
+    unexpected_binaries: dict[str, bytes] = field(default_factory=dict)
 
     @property
     def resource_tokens(self) -> int:
@@ -255,6 +363,7 @@ class SkillPackage:
         scripts: dict[str, str] = {}
         references: dict[str, str] = {}
         assets: dict[str, bytes] = {}
+        unexpected_binaries: dict[str, bytes] = {}
 
         scripts_dir = path / "scripts"
         if scripts_dir.is_dir():
@@ -264,7 +373,7 @@ class SkillPackage:
                     try:
                         scripts[rel] = file_path.read_text(encoding="utf-8")
                     except UnicodeDecodeError:
-                        pass
+                        unexpected_binaries[f"scripts/{rel}"] = file_path.read_bytes()
 
         refs_dir = path / "references"
         if refs_dir.is_dir():
@@ -274,7 +383,7 @@ class SkillPackage:
                     try:
                         references[rel] = file_path.read_text(encoding="utf-8")
                     except UnicodeDecodeError:
-                        pass
+                        unexpected_binaries[f"references/{rel}"] = file_path.read_bytes()
 
         assets_dir = path / "assets"
         if assets_dir.is_dir():
@@ -283,12 +392,28 @@ class SkillPackage:
                     rel = file_path.relative_to(assets_dir).as_posix()
                     assets[rel] = file_path.read_bytes()
 
+        bytecode_or_archive_exts = (
+            ".pyc", ".pyo", ".wasm", ".class", ".beam", ".so", ".dll", ".dylib", ".exe",
+            ".docx", ".xlsx", ".pptx", ".odt", ".zip", ".jar",
+        )
+        for file_path in path.rglob("*"):
+            if not file_path.is_file():
+                continue
+            rel_top = file_path.relative_to(path).as_posix()
+            if rel_top.startswith(("assets/", ".git/")):
+                continue
+            if rel_top in unexpected_binaries:
+                continue
+            if rel_top.lower().endswith(bytecode_or_archive_exts):
+                unexpected_binaries[rel_top] = file_path.read_bytes()
+
         return cls(
             skill=skill,
             scripts=scripts,
             references=references,
             assets=assets,
             source_dir=path,
+            unexpected_binaries=unexpected_binaries,
         )
 
     def save(self, destination: Path) -> Path:

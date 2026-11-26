@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.10.0 - 2026-11-25
+
+- Added **Anti-Bypass Scanner Hardening** (`SEC-018` through `SEC-021`) closing Trail of Bits / CSA 2026 scanner bypass vectors: whitespace/newline padding inflation (`SEC-018`), precompiled bytecode and hidden binaries (`.pyc`, `.pyo`, `.wasm`, `.class`, `.beam`, `SEC-019`), ZIP-backed document/archive and SVG indirection (`.docx`, `.xlsx`, `.pptx`, `.zip`, `.svg`, `SEC-020`), and cipher/split-stream obfuscation plus Levenshtein typosquatting (`SEC-021`).
+- Added **Native MCP `io.modelcontextprotocol/skills` Extension (SEP-2640)** (`skills_list`, `skills_get`, `read_skill_directory`, `get_server_capabilities`, `skill://{name}/SKILL.md`, and `skillforge mcp-manifest [--verify]`) with deterministic SHA-256 per-file manifests and 512-file / 16 MiB cap enforcement.
+- Tightened **AAIF `agentskills.io` Strict 6-Field Validation** (`validate --strict-spec`) to enforce the 6 allowed top-level frontmatter fields, length limits, and non-portable Claude dynamic syntax checks, plus added `skillforge normalize` to auto-migrate custom fields under `metadata:`.
+- Added **Live MCP Introspection, MCP Apps (`MCP-011`), Server Cards & Streamable-HTTP Firewall** (`audit-mcp --live`, `audit-mcp --server-card`, and `firewall-mcp --http-upstream` with stateless MCP `2026-07-28` `Mcp-Method`/`Mcp-Name` header smuggling protection).
+- Added **Agent Plugins 1.0 Auditor (`skillforge audit-plugin`, `HOOK-001`–`HOOK-004`)**, **Skill Packs (`skillforge pack-bundle init|audit|install`)**, and **Multi-Target / Multi-Event Hooks** (`skillforge hooks --target claude,cursor,gemini,codex --events PreToolUse,PostToolUse,UserPromptSubmit` + `--check-response`).
+- Added **A2A v1.0 Agent Card Auditor & Ed25519 JWS Signer** (`skillforge audit-a2a`, `A2A-001`–`A2A-005`) and **Sigstore Bundle v0.3 Keyless OIDC + Rekor Attestation** (`sign --sigstore`, `verify-signature --sigstore-bundle`, `provenance --sigstore`).
+- Added **`.pre-commit-hooks.yaml`**, **Custom YAML/YARA-Style Rule Packs** (`audit --rules`), and **Opt-in Prompt-Hardened LLM Semantic Judge** (`audit --llm-judge`).
+
 ## 0.9.0 - 2026-11-24
 
 - Added **MCP Tool Rug-Pull Lockfile** (`MCP-008`, `skillforge audit-mcp --pin-lock` / `--verify-lock`) pinning deterministic SHA-256 digests of MCP server commands, endpoints, and embedded tool schemas (`mcp-lock.json`) to detect post-install mutations.

@@ -407,6 +407,175 @@ class MCPFirewall:
 
         return proc.returncode or 0
 
+    def inspect_http_request(
+        self,
+        headers: dict[str, str],
+        body_bytes: bytes,
+    ) -> tuple[FirewallDecision, dict[str, Any] | None]:
+        """Inspect a stateless MCP 2026-07-28 HTTP JSON-RPC request and routing headers."""
+        norm_headers = {k.lower(): v for k, v in headers.items()}
+        hdr_method = norm_headers.get("mcp-method", "").strip()
+        hdr_name = norm_headers.get("mcp-name", "").strip()
+
+        try:
+            payload = json.loads(body_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            decision = FirewallDecision(
+                action="BLOCK",
+                direction="request",
+                method=hdr_method or "unknown",
+                tool_name=hdr_name or None,
+                violations=[
+                    FirewallViolation(
+                        rule_id="FW-001",
+                        severity="HIGH",
+                        message=f"Malformed JSON-RPC HTTP request body: {exc}",
+                        field_path="body",
+                    )
+                ],
+            )
+            self._log_decision(decision)
+            return decision, None
+
+        if not isinstance(payload, dict):
+            decision = FirewallDecision(
+                action="BLOCK",
+                direction="request",
+                method=hdr_method or "unknown",
+                violations=[
+                    FirewallViolation(
+                        rule_id="FW-001",
+                        severity="HIGH",
+                        message="JSON-RPC HTTP body must be an object",
+                        field_path="body",
+                    )
+                ],
+            )
+            self._log_decision(decision)
+            return decision, None
+
+        decision = self.inspect_request(payload)
+
+        # Enforce consistency between MCP 2026-07-28 routing headers and JSON-RPC body
+        body_method = str(payload.get("method", ""))
+        if hdr_method and body_method and hdr_method != body_method:
+            decision.violations.append(
+                FirewallViolation(
+                    rule_id="FW-006",
+                    severity="HIGH",
+                    message=f"Mcp-Method header '{hdr_method}' mismatches JSON-RPC method '{body_method}' (header smuggling)",
+                    field_path="headers.Mcp-Method",
+                )
+            )
+            decision.action = "BLOCK"
+
+        if hdr_name and self.allowed_tools is not None and hdr_name not in self.allowed_tools:
+            if not any(v.rule_id == "FW-006" and v.field_path == "params.name" for v in decision.violations):
+                decision.violations.append(
+                    FirewallViolation(
+                        rule_id="FW-006",
+                        severity="MEDIUM",
+                        message=f"Header Mcp-Name '{hdr_name}' is not in firewall allowlist",
+                        field_path="headers.Mcp-Name",
+                    )
+                )
+                decision.action = "BLOCK"
+
+        return decision, payload
+
+    def create_http_proxy_server(
+        self,
+        upstream_url: str,
+        *,
+        host: str = "127.0.0.1",
+        port: int = 8787,
+        timeout: float = 15.0,
+    ) -> Any:
+        """Build a stdlib ThreadingHTTPServer proxying MCP Streamable-HTTP traffic through the firewall."""
+        import urllib.error
+        import urllib.request
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        firewall = self
+
+        class _MCPProxyHandler(BaseHTTPRequestHandler):
+            def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+                return
+
+            def do_POST(self) -> None:  # noqa: N802
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length) if length > 0 else b""
+                req_headers = {k: v for k, v in self.headers.items()}
+                decision, parsed = firewall.inspect_http_request(req_headers, body)
+                if decision.action == "BLOCK":
+                    err_frame = firewall.build_error_response(
+                        parsed.get("id") if isinstance(parsed, dict) else None,
+                        decision,
+                    )
+                    out_bytes = json.dumps(err_frame).encode("utf-8")
+                    self.send_response(403)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(out_bytes)))
+                    self.end_headers()
+                    self.wfile.write(out_bytes)
+                    return
+
+                fwd_headers = {
+                    k: v
+                    for k, v in req_headers.items()
+                    if k.lower() not in ("host", "content-length", "connection")
+                }
+                req = urllib.request.Request(upstream_url, data=body, headers=fwd_headers, method="POST")
+                try:
+                    with urllib.request.urlopen(req, timeout=timeout) as resp:
+                        raw_resp = resp.read()
+                        status_code = resp.status
+                except urllib.error.HTTPError as exc:
+                    raw_resp = exc.read()
+                    status_code = exc.code
+                except (urllib.error.URLError, OSError) as exc:
+                    err_bytes = json.dumps(
+                        {"jsonrpc": "2.0", "id": None, "error": {"code": -32002, "message": f"Upstream MCP unreachable: {exc}"}}
+                    ).encode("utf-8")
+                    self.send_response(502)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(err_bytes)))
+                    self.end_headers()
+                    self.wfile.write(err_bytes)
+                    return
+
+                out_bytes = raw_resp
+                try:
+                    resp_obj = json.loads(raw_resp.decode("utf-8"))
+                    if isinstance(resp_obj, dict) and "result" in resp_obj:
+                        resp_dec, sanitized = firewall.inspect_response(resp_obj)
+                        if resp_dec.action == "BLOCK":
+                            out_bytes = json.dumps(firewall.build_error_response(resp_obj.get("id"), resp_dec)).encode("utf-8")
+                            status_code = 403
+                        else:
+                            out_bytes = json.dumps(sanitized).encode("utf-8")
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    pass
+
+                self.send_response(status_code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(out_bytes)))
+                self.end_headers()
+                self.wfile.write(out_bytes)
+
+        return ThreadingHTTPServer((host, port), _MCPProxyHandler)
+
+    def run_http_proxy(self, upstream_url: str, *, host: str = "127.0.0.1", port: int = 8787) -> int:
+        """Run the blocking Streamable-HTTP MCP security firewall proxy."""
+        server = self.create_http_proxy_server(upstream_url, host=host, port=port)
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            server.server_close()
+        return 0
+
 
 def wrap_mcp_config(config_path: Path, output_path: Path | None = None) -> dict[str, Any]:
     """Wrap stdio mcpServers entries in an mcp.json config with skillforge firewall-mcp."""

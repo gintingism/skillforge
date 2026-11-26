@@ -186,9 +186,51 @@ def create_mcp_server(registry: Registry) -> MCPServer:
         except SkillForgeError as exc:
             return json.dumps({"policy_passed": False, "error": str(exc)})
 
+    @server.tool(name="skills_list", annotations=READ_ONLY)
+    def skills_list_tool(cursor: str | None = None, limit: int = 50) -> str:
+        """SEP-2640 (io.modelcontextprotocol/skills) skills/list returning SHA-256 file manifests."""
+        from .mcp_skills_ext import MCPSkillsProtocolError, skills_list as run_skills_list
+
+        try:
+            return json.dumps(run_skills_list(registry, cursor=cursor, limit=limit))
+        except MCPSkillsProtocolError as exc:
+            return json.dumps({"error": {"code": exc.code, "message": str(exc)}})
+
+    @server.tool(name="skills_get", annotations=READ_ONLY)
+    def skills_get_tool(uri: str) -> str:
+        """SEP-2640 (io.modelcontextprotocol/skills) skills/get returning manifest for a skill URI."""
+        from .mcp_skills_ext import MCPSkillsProtocolError, skills_get as run_skills_get
+
+        try:
+            return json.dumps(run_skills_get(registry, uri))
+        except MCPSkillsProtocolError as exc:
+            return json.dumps({"error": {"code": exc.code, "message": str(exc)}})
+
+    @server.tool(name="read_skill_directory", annotations=READ_ONLY)
+    def read_skill_directory_tool(uri: str) -> str:
+        """SEP-2640 resources/directory/read listing direct children of a skill directory URI."""
+        from .mcp_skills_ext import MCPSkillsProtocolError, resources_directory_read
+
+        try:
+            return json.dumps(resources_directory_read(registry, uri))
+        except MCPSkillsProtocolError as exc:
+            return json.dumps({"error": {"code": exc.code, "message": str(exc)}})
+
+    @server.tool(name="get_server_capabilities", annotations=READ_ONLY)
+    def get_server_capabilities_tool() -> str:
+        """Return MCP 2026-07-28 server/discover capabilities declaring io.modelcontextprotocol/skills."""
+        from .mcp_skills_ext import server_capabilities_metadata
+
+        return json.dumps(server_capabilities_metadata(directory_read=True))
+
     @server.resource("skill://{name}", mime_type="text/markdown")
     def skill_resource(name: str) -> str:
         """Read a skill by its skill:// URI."""
+        return registry.get(name).render()
+
+    @server.resource("skill://{name}/SKILL.md", mime_type="text/markdown")
+    def skill_md_resource(name: str) -> str:
+        """Read a skill SKILL.md via SEP-2640 canonical URI."""
         return registry.get(name).render()
 
     return server

@@ -72,14 +72,26 @@ def audit(
     strict: bool = typer.Option(False, "--strict", help="Fail on any warning or low-severity finding."),
     sandbox: bool = typer.Option(False, "--sandbox", help="Execute bundled Python scripts inside an isolated offline sandbox harness."),
     policy_file: Path | None = typer.Option(None, "--policy", help="Path to .skillforge-policy.yaml rule suppression and threshold file."),
+    rules_file: Path | None = typer.Option(None, "--rules", help="Path to a custom YAML/YARA-style rule pack file."),
+    llm_judge: bool = typer.Option(False, "--llm-judge", help="Run opt-in prompt-hardened LLM semantic intent-vs-behavior review."),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
     sarif_output: Path | None = typer.Option(None, "--sarif", help="Emit OASIS SARIF v2.1.0 report for GitHub Code Scanning."),
 ) -> None:
     """Audit a skill for prompt injection, zero-width unicode, and security issues."""
+    from .custom_rules import load_custom_rule_pack, merge_custom_rule_findings
     from .policy import SecurityPolicy, apply_policy
+    from .semantic_judge import run_semantic_judge
 
     try:
         report = audit_path(path, sandbox=sandbox)
+        if rules_file is not None:
+            loaded_rules = load_custom_rule_pack(rules_file)
+            target_pkg = SkillPackage.load(path)
+            merge_custom_rule_findings(report, target_pkg, loaded_rules)
+        if llm_judge:
+            target_pkg = SkillPackage.load(path)
+            judge_res = run_semantic_judge(target_pkg)
+            report.findings.extend(judge_res.findings)
         if policy_file is not None:
             loaded_policy = SecurityPolicy.load(policy_file)
             eval_res = apply_policy(report, loaded_policy)
@@ -123,18 +135,65 @@ def audit_mcp(
     path: Path = typer.Argument(Path("mcp.json"), help="Path to mcp.json or claude_desktop_config.json file."),
     pin_lock: Path | None = typer.Option(None, "--pin-lock", help="Write pinned MCP server & tool schema hashes to lockfile."),
     verify_lock: Path | None = typer.Option(None, "--verify-lock", help="Verify MCP config against pinned mcp-lock.json to detect rug-pulls (MCP-008)."),
+    live: bool = typer.Option(False, "--live", help="Probe configured stdio/HTTP MCP servers live for tools/prompts/resources and MCP Apps."),
+    server_card: Path | None = typer.Option(None, "--server-card", help="Audit an MCP Server Card JSON (/.well-known/mcp/server-card.json)."),
     strict: bool = typer.Option(False, "--strict", help="Fail on any warning or low-severity finding."),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
     sarif_output: Path | None = typer.Option(None, "--sarif", help="Emit OASIS SARIF v2.1.0 report for GitHub Code Scanning."),
 ) -> None:
     """Audit an MCP configuration file for plaintext secrets, shell command wrappers, unpinned packages, and rug-pulls."""
+    from .mcp_live import audit_mcp_app_resource, audit_mcp_server_card, probe_http_mcp_server, probe_stdio_mcp_server
+    from .security import AuditFinding, Severity, _extract_mcp_servers
+
     try:
-        if pin_lock is not None:
-            written_lock = pin_mcp_config(path, lock_path=pin_lock)
-            if not json_output:
-                typer.echo(f"Pinned MCP server & tool fingerprints to {written_lock}")
-        report = audit_mcp_config(path, lock_path=verify_lock)
-    except (SkillForgeError, OSError) as exc:
+        if server_card is not None:
+            report = audit_mcp_server_card(server_card)
+        else:
+            if pin_lock is not None:
+                written_lock = pin_mcp_config(path, lock_path=pin_lock)
+                if not json_output:
+                    typer.echo(f"Pinned MCP server & tool fingerprints to {written_lock}")
+            report = audit_mcp_config(path, lock_path=verify_lock)
+            if live and path.is_file():
+                raw_cfg = json.loads(path.read_text(encoding="utf-8"))
+                servers = _extract_mcp_servers(raw_cfg)
+                for s_name, s_cfg in sorted(servers.items()):
+                    if not isinstance(s_cfg, dict):
+                        continue
+                    cmd = str(s_cfg.get("command", "")).strip()
+                    remote_url = str(s_cfg.get("url", s_cfg.get("endpoint", ""))).strip()
+                    if cmd:
+                        args = [str(a) for a in (s_cfg.get("args") or [])] if isinstance(s_cfg.get("args"), list) else []
+                        env_map = {str(k): str(v) for k, v in (s_cfg.get("env") or {}).items()} if isinstance(s_cfg.get("env"), dict) else {}
+                        disc = probe_stdio_mcp_server(s_name, cmd, args, env_map)
+                    elif remote_url:
+                        hdrs = {str(k): str(v) for k, v in (s_cfg.get("headers") or {}).items()} if isinstance(s_cfg.get("headers"), dict) else {}
+                        disc = probe_http_mcp_server(s_name, remote_url, hdrs)
+                    else:
+                        continue
+                    if not disc.reachable:
+                        report.findings.append(
+                            AuditFinding(
+                                rule_id="MCP-008",
+                                severity=Severity.LOW,
+                                message=f"Live MCP probe unreachable for server '{s_name}': {disc.error}",
+                                file=f"{path.name}::{s_name}",
+                            )
+                        )
+                        continue
+                    for res in disc.resources:
+                        uri = str(res.get("uri", ""))
+                        if uri.startswith("ui://"):
+                            report.findings.extend(
+                                audit_mcp_app_resource(
+                                    uri,
+                                    html=str(res.get("text", res.get("html", ""))),
+                                    csp=str(res.get("csp", "")),
+                                    sandbox_flags=res.get("sandbox"),
+                                    source_label=f"{path.name}::{s_name}",
+                                )
+                            )
+    except (SkillForgeError, OSError, json.JSONDecodeError) as exc:
         if json_output:
             typer.echo(json.dumps({"passed": False, "error": str(exc)}))
         else:
@@ -1173,30 +1232,52 @@ def sign_artifact(
     key: str | None = typer.Option(None, "--key", "-k", help="Secret key hex or Ed25519 PEM (or env SKILLFORGE_KEY)."),
     key_file: Path | None = typer.Option(None, "--key-file", help="File containing secret key or Ed25519 private key PEM."),
     signer: str = typer.Option("local-maintainer", "--signer", help="Signer identity tag."),
-    algorithm: str = typer.Option("hmac-sha256", "--algorithm", "-a", help="Signing algorithm: hmac-sha256 or ed25519."),
+    algorithm: str = typer.Option("hmac-sha256", "--algorithm", "-a", help="Signing algorithm: hmac-sha256, ed25519, or sigstore-bundle."),
+    sigstore: bool = typer.Option(False, "--sigstore", help="Sign using Sigstore Bundle v0.3 keyless OIDC + Rekor format."),
+    oidc_issuer: str = typer.Option("https://token.actions.githubusercontent.com", "--oidc-issuer", help="OIDC issuer claim for Sigstore bundles."),
+    oidc_identity: str | None = typer.Option(None, "--oidc-identity", help="OIDC identity subject claim for Sigstore bundles."),
 ) -> None:
     """Sign a skill package or lockfile with tamper-evident cryptographic attestation."""
     import os
     from skillforge.signing import SkillSigner, SigningError
 
+    effective_alg = "sigstore-bundle" if sigstore else algorithm
     secret = key or (
         key_file.read_text(encoding="utf-8").strip()
         if key_file and key_file.is_file()
         else os.environ.get("SKILLFORGE_KEY")
     )
+
+    if effective_alg == "sigstore-bundle":
+        skill_dir = path if path.is_dir() else path.parent
+        try:
+            bundle, _ = SkillSigner.sign_sigstore_bundle(
+                skill_dir,
+                oidc_issuer=oidc_issuer,
+                oidc_identity=oidc_identity or signer,
+                private_key_pem=secret,
+            )
+            bundle_path = skill_dir / "SKILL.sigstore.json"
+            bundle_path.write_text(json.dumps(bundle, indent=2) + "\n", encoding="utf-8")
+            typer.echo(f"Signed skill package (sigstore-bundle): {bundle_path}")
+        except SigningError as exc:
+            typer.echo(f"Signing failed: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        return
+
     if not secret:
         typer.echo("Error: A signing key must be provided via --key, --key-file, or SKILLFORGE_KEY env var.", err=True)
         raise typer.Exit(code=1)
 
     try:
         if path.is_file() and path.name.endswith(".lock"):
-            sig_file = SkillSigner.sign_lockfile(path, secret, signer_id=signer, algorithm=algorithm)
-            typer.echo(f"Signed lockfile ({algorithm}): {sig_file}")
+            sig_file = SkillSigner.sign_lockfile(path, secret, signer_id=signer, algorithm=effective_alg)
+            typer.echo(f"Signed lockfile ({effective_alg}): {sig_file}")
         elif path.is_dir() or path.name == "SKILL.md":
             skill_dir = path if path.is_dir() else path.parent
-            payload = SkillSigner.sign_skill(skill_dir, secret, signer_id=signer, algorithm=algorithm)
+            payload = SkillSigner.sign_skill(skill_dir, secret, signer_id=signer, algorithm=effective_alg)
             sig_file = SkillSigner.write_signature(skill_dir, payload)
-            typer.echo(f"Signed skill package ({len(payload['manifest'])} files, {algorithm}): {sig_file}")
+            typer.echo(f"Signed skill package ({len(payload['manifest'])} files, {effective_alg}): {sig_file}")
         else:
             typer.echo(f"Error: Path {path} is neither a skill directory nor a lockfile.", err=True)
             raise typer.Exit(code=1)
@@ -1210,6 +1291,9 @@ def verify_sig(
     path: Path = typer.Argument(..., help="Path to skill directory or skillforge.lock to verify."),
     key: str | None = typer.Option(None, "--key", "-k", help="Optional secret key to verify HMAC."),
     key_file: Path | None = typer.Option(None, "--key-file", help="File containing secret key."),
+    sigstore_bundle: Path | None = typer.Option(None, "--sigstore-bundle", help="Verify a Sigstore Bundle v0.3 JSON file."),
+    oidc_issuer: str | None = typer.Option(None, "--oidc-issuer", help="Expected OIDC issuer for Sigstore verification."),
+    oidc_identity: str | None = typer.Option(None, "--oidc-identity", help="Expected OIDC identity subject for Sigstore verification."),
 ) -> None:
     """Verify signature manifest integrity and cryptographic authenticity."""
     import os
@@ -1221,7 +1305,16 @@ def verify_sig(
         else os.environ.get("SKILLFORGE_KEY")
     )
 
-    if path.is_file() and path.name.endswith(".lock"):
+    if sigstore_bundle is not None:
+        skill_dir = path if path.is_dir() else path.parent
+        res = SkillSigner.verify_sigstore_bundle(
+            skill_dir,
+            sigstore_bundle,
+            expected_issuer=oidc_issuer,
+            expected_identity=oidc_identity,
+            public_key_pem=secret,
+        )
+    elif path.is_file() and path.name.endswith(".lock"):
         res = SkillSigner.verify_lockfile(path, key=secret)
     elif path.is_dir() or path.name == "SKILL.md":
         skill_dir = path if path.is_dir() else path.parent
@@ -1255,13 +1348,16 @@ def tui_command(
 def firewall_mcp(
     check: Path | None = typer.Option(None, "--check", "-c", help="Inspect a JSONL file of MCP JSON-RPC traffic."),
     wrap_config: Path | None = typer.Option(None, "--wrap-config", "-w", help="Wrap mcpServers in an mcp.json file with skillforge firewall-mcp."),
+    http_upstream: str | None = typer.Option(None, "--http-upstream", help="Upstream MCP Streamable-HTTP URL to reverse-proxy through the firewall."),
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind host for HTTP proxy mode."),
+    port: int = typer.Option(8787, "--port", help="Bind port for HTTP proxy mode."),
     audit_log: Path | None = typer.Option(None, "--audit-log", "-l", help="Path to write JSONL forensic audit log."),
     allow_tool: list[str] | None = typer.Option(None, "--allow-tool", "-a", help="Restrict allowed MCP tool names."),
     no_redact: bool = typer.Option(False, "--no-redact", help="Disable automatic secret redaction on responses."),
     json_output: bool = typer.Option(False, "--json", help="Emit audit summary as JSON."),
     command: list[str] | None = typer.Argument(None, help="Upstream MCP server command and arguments to proxy."),
 ) -> None:
-    """Run inline zero-trust MCP JSON-RPC security firewall or inspect a JSONL traffic capture."""
+    """Run inline zero-trust MCP JSON-RPC security firewall (stdio or Streamable-HTTP) or inspect a JSONL traffic capture."""
     from skillforge.mcp_firewall import MCPFirewall, wrap_mcp_config
 
     allowed_set = set(allow_tool) if allow_tool else None
@@ -1272,6 +1368,11 @@ def firewall_mcp(
     )
 
     try:
+        if http_upstream is not None:
+            typer.echo(f"Starting SkillForge MCP Streamable-HTTP Firewall on http://{host}:{port} -> {http_upstream}")
+            rc = fw.run_http_proxy(http_upstream, host=host, port=port)
+            raise typer.Exit(code=rc)
+
         if wrap_config is not None:
             res = wrap_mcp_config(wrap_config)
             if json_output:
@@ -1304,7 +1405,7 @@ def firewall_mcp(
             return
 
         if not command:
-            typer.echo("Error: Provide either --check <jsonl_file> or an upstream MCP command to proxy.", err=True)
+            typer.echo("Error: Provide --check <jsonl_file>, --http-upstream <url>, or an upstream MCP command to proxy.", err=True)
             raise typer.Exit(code=1)
 
         rc = fw.run_stdio_proxy(command)
@@ -1474,23 +1575,25 @@ def provenance_command(
     output: Path | None = typer.Option(None, "--output", "-o", help="Output path (defaults to <skill>/provenance.intoto.jsonl)."),
     key: str | None = typer.Option(None, "--key", "-k", envvar="SKILLFORGE_SIGNING_KEY", help="Optional HMAC key or Ed25519 private key PEM."),
     key_file: Path | None = typer.Option(None, "--key-file", help="Optional file containing signing key or Ed25519 private key PEM."),
-    algorithm: str = typer.Option("hmac-sha256", "--algorithm", "-a", help="Signing algorithm: hmac-sha256 or ed25519."),
+    algorithm: str = typer.Option("hmac-sha256", "--algorithm", "-a", help="Signing algorithm: hmac-sha256, ed25519, or sigstore-bundle."),
+    sigstore: bool = typer.Option(False, "--sigstore", help="Generate SLSA v1.0 provenance as a Sigstore Bundle v0.3 OIDC attestation."),
     signer_id: str = typer.Option("skillforge-attestor", "--signer", "-s", help="Attestor / signer identifier."),
     json_output: bool = typer.Option(False, "--json", help="Emit provenance envelope JSON to stdout."),
 ) -> None:
     """Generate an in-toto v1 Statement with SLSA v1.0 Provenance attestation for a skill package."""
     from skillforge.provenance import generate_provenance, write_provenance
 
+    effective_alg = "sigstore-bundle" if sigstore else algorithm
     resolved_key = key or (key_file.read_text(encoding="utf-8").strip() if key_file and key_file.is_file() else None)
     try:
-        envelope = generate_provenance(path, signing_key=resolved_key, signer_id=signer_id, algorithm=algorithm)
+        envelope = generate_provenance(path, signing_key=resolved_key, signer_id=signer_id, algorithm=effective_alg)
         written = write_provenance(path, envelope, output_path=output)
         if json_output:
             typer.echo(json.dumps(envelope, indent=2))
         else:
             stmt = envelope["statement"]
             subj_count = len(stmt.get("subject", []))
-            signed_state = f"signed/{algorithm}" if envelope.get("signatures") else "unsigned"
+            signed_state = f"signed/{effective_alg}" if envelope.get("signatures") else "unsigned"
             typer.echo(f"Generated SLSA v1.0 provenance ({signed_state}, {subj_count} subjects) -> {written}")
     except (SkillForgeError, OSError) as exc:
         typer.echo(str(exc), err=True)
@@ -1768,12 +1871,45 @@ def telemetry_command(
 @app.command("hooks")
 def hooks_command(
     project: Path = typer.Argument(Path("."), help="Target project root."),
-    init: bool = typer.Option(False, "--init", help="Install PreToolUse security guard hook in .claude/settings.json."),
+    init: bool = typer.Option(False, "--init", help="Install PreToolUse, PostToolUse, and UserPromptSubmit guard hooks."),
+    target: str = typer.Option("claude", "--target", help="Comma-separated agent targets: claude, cursor, gemini, codex, or all."),
+    events: str = typer.Option("PreToolUse,PostToolUse,UserPromptSubmit", "--events", help="Comma-separated hook lifecycle events to install."),
     check_payload: str | None = typer.Option(None, "--check-payload", help="Inspect a JSON tool-call payload against MCP firewall rules."),
+    check_response: str | None = typer.Option(None, "--check-response", help="Inspect a PostToolUse JSON/text response for secret leakage or indirect prompt injection."),
     json_output: bool = typer.Option(False, "--json", help="Emit result as JSON."),
 ) -> None:
-    """Install or execute PreToolUse agent session security hooks (Claude Code / Agent SDK)."""
+    """Install or execute multi-event agent session security hooks (Claude Code, Cursor, Gemini, Codex)."""
     from .mcp_firewall import MCPFirewall
+    from .plugins_and_packs import install_agent_hooks
+
+    if check_response is not None:
+        fw = MCPFirewall()
+        try:
+            parsed_resp: Any = json.loads(check_response)
+        except json.JSONDecodeError:
+            parsed_resp = {"text": check_response}
+        resp_msg = (
+            parsed_resp
+            if isinstance(parsed_resp, dict) and "result" in parsed_resp
+            else {"jsonrpc": "2.0", "id": 1, "result": parsed_resp}
+        )
+        decision, sanitized = fw.inspect_response(resp_msg)
+        out = {
+            "passed": decision.action != "BLOCK",
+            "action": decision.action,
+            "sanitized_result": sanitized.get("result"),
+            "violations": [
+                {"rule_id": v.rule_id, "severity": v.severity, "message": v.message, "field_path": v.field_path}
+                for v in decision.violations
+            ],
+        }
+        if json_output:
+            typer.echo(json.dumps(out))
+        else:
+            typer.echo(f"PostToolUse Hook Check: {decision.action} ({len(decision.violations)} violation(s))")
+        if decision.action == "BLOCK":
+            raise typer.Exit(code=2)
+        return
 
     if check_payload is not None:
         fw = MCPFirewall()
@@ -1804,52 +1940,261 @@ def hooks_command(
         return
 
     if init:
-        claude_dir = project / ".claude"
-        claude_dir.mkdir(parents=True, exist_ok=True)
-        settings_path = claude_dir / "settings.json"
-        existing: dict[str, Any] = {}
-        if settings_path.is_file():
-            try:
-                loaded = json.loads(settings_path.read_text(encoding="utf-8"))
-                if isinstance(loaded, dict):
-                    existing = loaded
-            except json.JSONDecodeError:
-                existing = {}
-
-        hooks_obj = existing.setdefault("hooks", {})
-        if not isinstance(hooks_obj, dict):
-            hooks_obj = {}
-            existing["hooks"] = hooks_obj
-        pre_list = hooks_obj.setdefault("PreToolUse", [])
-        if not isinstance(pre_list, list):
-            pre_list = []
-            hooks_obj["PreToolUse"] = pre_list
-
-        hook_cmd = "skillforge hooks --check-payload \"$CLAUDE_TOOL_INPUT\""
-        already_installed = any(
-            isinstance(entry, dict)
-            and any(
-                isinstance(h, dict) and h.get("command") == hook_cmd
-                for h in (entry.get("hooks") or [])
-            )
-            for entry in pre_list
-        )
-        if not already_installed:
-            pre_list.append(
-                {
-                    "matcher": "Bash|Write|Edit|MultiEdit",
-                    "hooks": [{"type": "command", "command": hook_cmd}],
-                }
-            )
-        settings_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
+        raw_targets = ["claude", "cursor", "gemini", "codex"] if target.strip().lower() == "all" else [t.strip() for t in target.split(",") if t.strip()]
+        raw_events = [e.strip() for e in events.split(",") if e.strip()]
+        try:
+            summary = install_agent_hooks(project, targets=raw_targets, events=raw_events)
+        except SkillForgeError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
         if json_output:
-            typer.echo(json.dumps({"installed": True, "settings_path": str(settings_path)}))
+            typer.echo(json.dumps(summary))
         else:
-            typer.echo(f"Installed PreToolUse security guard hook in {settings_path}")
+            typer.echo(
+                f"Installed {', '.join(summary['events'])} security guard hooks into: {', '.join(summary['settings_paths'])}"
+            )
         return
 
-    typer.echo("Specify --init to install PreToolUse hooks or --check-payload '<json>' to inspect a tool invocation.", err=True)
+    typer.echo("Specify --init, --check-payload '<json>', or --check-response '<json>'.", err=True)
     raise typer.Exit(code=1)
+
+
+@app.command("normalize")
+def normalize_command(
+    path: Path = typer.Argument(..., help="Path to SKILL.md file or skill directory to normalize."),
+    write: bool = typer.Option(False, "--write", "-w", help="Overwrite SKILL.md in place with AAIF 6-field normalized frontmatter."),
+    fix_name: bool = typer.Option(False, "--fix-name", help="Also normalize underscores/invalid chars in the skill name."),
+    json_output: bool = typer.Option(False, "--json", help="Emit normalization report as JSON."),
+) -> None:
+    """Normalize SKILL.md frontmatter to conform strictly to the 6-field AAIF agentskills.io standard."""
+    skill_file = path / "SKILL.md" if path.is_dir() else path
+    try:
+        skill = Skill.load(skill_file)
+        normalized, changes = skill.normalize_portable(fix_name=fix_name)
+        rendered = normalized.render()
+        if write:
+            skill_file.write_text(rendered, encoding="utf-8")
+        remaining = normalized.validate_strict_spec(source_dir=skill_file.parent if path.is_dir() else None)
+    except (SkillForgeError, OSError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"normalized": False, "error": str(exc)}))
+        else:
+            typer.echo(f"Normalize error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    payload = {
+        "normalized": True,
+        "path": str(skill_file),
+        "written": write,
+        "changes": changes,
+        "remaining_strict_issues": remaining,
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2))
+    else:
+        typer.echo(f"Normalized '{normalized.name}' ({len(changes)} change(s), written={write})")
+        for ch in changes:
+            typer.echo(f"  - {ch}")
+        for rem in remaining:
+            typer.echo(f"  [REMAINING] {rem}")
+
+
+@app.command("audit-plugin")
+def audit_plugin_command(
+    path: Path = typer.Argument(Path("."), help="Path to an Agent Plugins 1.0 bundle directory."),
+    strict: bool = typer.Option(False, "--strict", help="Fail on any warning or low-severity finding."),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+    sarif_output: Path | None = typer.Option(None, "--sarif", help="Emit OASIS SARIF v2.1.0 report."),
+) -> None:
+    """Audit an Agent Plugins 1.0 bundle (.claude-plugin, .codex-plugin, skills, subagents, MCP, and hooks)."""
+    from .plugins_and_packs import audit_plugin_bundle
+
+    try:
+        report = audit_plugin_bundle(path)
+    except (SkillForgeError, OSError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"passed": False, "error": str(exc)}))
+        else:
+            typer.echo(f"Plugin audit error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if sarif_output:
+        sarif_output.parent.mkdir(parents=True, exist_ok=True)
+        sarif_output.write_text(json.dumps(report.to_sarif(), indent=2), encoding="utf-8")
+
+    if json_output:
+        typer.echo(json.dumps(report.to_dict(), indent=2))
+    else:
+        typer.echo(report.render_text())
+
+    if not report.passed or (strict and report.findings):
+        raise typer.Exit(code=1)
+
+
+@app.command("pack-bundle")
+def pack_bundle_command(
+    action: str = typer.Argument(..., help="Action: init, audit, or install."),
+    manifest: Path = typer.Argument(Path("skillforge-pack.yaml"), help="Path to skillforge-pack.yaml or package.json skill pack."),
+    project: Path = typer.Option(Path("."), "--project", "-p", help="Target project root for pack install."),
+    json_output: bool = typer.Option(False, "--json", help="Emit result as JSON."),
+) -> None:
+    """Initialize, security-audit, or install a team Skill Pack bundle (skillforge-pack.yaml / skills.sh interop)."""
+    from .plugins_and_packs import SkillPackEntry, SkillPackManifest
+
+    act = action.strip().lower()
+    if act == "init":
+        starter = SkillPackManifest(
+            name=project.resolve().name or "team-skill-pack",
+            version="1.0.0",
+            description="Curated team SkillForge skill bundle.",
+            skills=[
+                SkillPackEntry(name="systematic-debugging", source="builtin:systematic-debugging", min_score=90),
+                SkillPackEntry(name="secret-sanitizer", source="builtin:secret-sanitizer", min_score=90),
+            ],
+        )
+        manifest.write_text(starter.to_yaml(), encoding="utf-8")
+        if json_output:
+            typer.echo(json.dumps({"initialized": True, "manifest": str(manifest), "skills": len(starter.skills)}))
+        else:
+            typer.echo(f"Created Skill Pack manifest: {manifest}")
+        return
+
+    try:
+        pack = SkillPackManifest.load(manifest)
+    except SkillForgeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+
+    builtin_reg = BuiltinRegistry()
+    auditor = SkillAuditor()
+    results: list[dict[str, Any]] = []
+    all_passed = True
+
+    for entry in pack.skills:
+        pkg: SkillPackage | None = None
+        if entry.source.startswith("builtin:") or entry.source == entry.name:
+            b_name = entry.source.removeprefix("builtin:")
+            try:
+                pkg = builtin_reg.get_package(b_name)
+            except SkillForgeError:
+                pkg = None
+        if pkg is None:
+            local_cand = Path(entry.source)
+            if not local_cand.is_absolute():
+                local_cand = manifest.parent / entry.source
+            if local_cand.exists():
+                pkg = SkillPackage.load(local_cand)
+        if pkg is None:
+            results.append({"name": entry.name, "source": entry.source, "passed": False, "error": "Skill source not found locally/builtin"})
+            all_passed = False
+            continue
+
+        rep = auditor.audit_package(pkg)
+        passed = rep.passed and rep.score >= entry.min_score
+        if not passed:
+            all_passed = False
+        installed_targets: list[str] = []
+        if act == "install" and passed:
+            from .adapters import UniversalAgentsAdapter
+
+            adapters = detect_adapters(project) or [UniversalAgentsAdapter()]
+            for adapter in adapters:
+                adapter.install(pkg, project)
+                installed_targets.append(adapter.__class__.__name__)
+        results.append(
+            {
+                "name": entry.name,
+                "source": entry.source,
+                "score": rep.score,
+                "min_score": entry.min_score,
+                "passed": passed,
+                "installed_targets": installed_targets,
+            }
+        )
+
+    out = {"pack": pack.name, "action": act, "passed": all_passed, "skills": results}
+    if json_output:
+        typer.echo(json.dumps(out, indent=2))
+    else:
+        typer.echo(f"Skill Pack '{pack.name}' ({act}): {'PASSED' if all_passed else 'FAILED'}")
+        for r in results:
+            status = "PASS" if r.get("passed") else "FAIL"
+            typer.echo(f"  [{status}] {r['name']} (score={r.get('score', 0)}/{r.get('min_score', 80)})")
+    if not all_passed:
+        raise typer.Exit(code=1)
+
+
+@app.command("audit-a2a")
+def audit_a2a_command(
+    path: Path = typer.Argument(..., help="Path to A2A v1.0 /.well-known/agent-card.json file."),
+    key_file: Path | None = typer.Option(None, "--key-file", help="Ed25519 public key PEM to cryptographically verify JWS signatures."),
+    sign_key: Path | None = typer.Option(None, "--sign-key", help="Ed25519 private key PEM to sign the Agent Card in-place per A2A v1.0 §8.4."),
+    strict: bool = typer.Option(False, "--strict", help="Fail on any warning or low-severity finding."),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+) -> None:
+    """Audit or JWS-sign an Agent2Agent (A2A) v1.0 Agent Card JSON document."""
+    from .a2a_audit import audit_agent_card, sign_agent_card_jws
+
+    try:
+        if sign_key is not None:
+            card_obj = json.loads(path.read_text(encoding="utf-8"))
+            priv_pem = sign_key.read_text(encoding="utf-8").strip()
+            signed = sign_agent_card_jws(card_obj, priv_pem)
+            path.write_text(json.dumps(signed, indent=2) + "\n", encoding="utf-8")
+            if not json_output:
+                typer.echo(f"Signed A2A Agent Card (EdDSA JWS) -> {path}")
+        pub_pem = key_file.read_text(encoding="utf-8").strip() if key_file and key_file.is_file() else None
+        report = audit_agent_card(path, public_key_pem=pub_pem)
+    except (SkillForgeError, OSError, json.JSONDecodeError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"passed": False, "error": str(exc)}))
+        else:
+            typer.echo(f"A2A audit error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if json_output:
+        typer.echo(json.dumps(report.to_dict(), indent=2))
+    else:
+        typer.echo(report.render_text())
+
+    if not report.passed or (strict and report.findings):
+        raise typer.Exit(code=1)
+
+
+@app.command("mcp-manifest")
+def mcp_manifest_command(
+    path: Path = typer.Argument(..., help="Path to skill directory or SKILL.md."),
+    verify: Path | None = typer.Option(None, "--verify", help="Verify local skill files against an existing SEP-2640 manifest JSON."),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write generated SEP-2640 manifest JSON to path."),
+) -> None:
+    """Generate or verify a SEP-2640 (io.modelcontextprotocol/skills) SHA-256 skill manifest."""
+    from .mcp_skills_ext import build_skill_entry, package_file_bytes, verify_skill_manifest
+
+    try:
+        pkg = SkillPackage.load(path)
+        if verify is not None:
+            entry = json.loads(verify.read_text(encoding="utf-8"))
+            raw_map = {
+                f"skill://{pkg.skill.name}/{rel}": raw
+                for rel, raw in package_file_bytes(pkg).items()
+            }
+            res = verify_skill_manifest(entry, raw_map)
+            typer.echo(json.dumps(res.to_dict(), indent=2))
+            if not res.valid:
+                raise typer.Exit(code=1)
+            return
+
+        entry = build_skill_entry(pkg)
+        rendered = json.dumps(entry, indent=2) + "\n"
+        if output is not None:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(rendered, encoding="utf-8")
+            typer.echo(f"Wrote SEP-2640 skill manifest -> {output}")
+        else:
+            typer.echo(rendered.rstrip())
+    except (SkillForgeError, OSError, json.JSONDecodeError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
 
 
 if __name__ == "__main__":
