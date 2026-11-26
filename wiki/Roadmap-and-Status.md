@@ -6,9 +6,9 @@ This document tracks the current development status, delivered milestones, and f
 
 ## Current Project Status
 
-- **Latest Stable Version:** `v0.10.0`
+- **Latest Stable Version:** `v0.10.1`
 - **PyPI Package:** [`agent-skillforge`](https://pypi.org/project/agent-skillforge/)
-- **Release Status:** Production Ready (194 unit tests passing across Python 3.11 and 3.12, `mypy --strict` clean across 34 source files).
+- **Release Status:** Production Ready (210 unit tests passing across Python 3.11 and 3.12, `mypy --strict` clean across 34 source files).
 - **Standards Conformance:** Agentic AI Foundation `agentskills.io` (strict 6-field), Agent Plugins 1.0, Model Context Protocol (`2026-07-28` + SEP-2640 `io.modelcontextprotocol/skills` + MCP Apps + Server Cards), Agent2Agent (`A2A` v1.0 JWS), OWASP Agentic Top 10 (`2026` `ASI01`–`ASI10`), OASIS SARIF v2.1.0, CycloneDX v1.6 AIBOM, SPDX v2.3, SLSA v1.0 Provenance (`in-toto` v1, HMAC-SHA256, Ed25519 & Sigstore Bundle v0.3), and HOL Guard Supply-Chain Audit.
 
 ---
