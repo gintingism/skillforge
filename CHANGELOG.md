@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.1 - 2026-11-25
+
+- Updated pinned `typer` dependency in `requirements.txt` from `0.28.0` to `0.29.1` and added ANSI-safe CLI compatibility regression tests (`tests/test_cli_typer_compatibility.py`).
+- Updated `hashgraph-online/ai-plugin-scanner-action` in `.github/workflows/plugin-security-scan.yml` from `v1.2.816` to `v1.2.818`.
+
 ## 0.10.0 - 2026-11-25
 
 - Added **Anti-Bypass Scanner Hardening** (`SEC-018` through `SEC-021`) closing Trail of Bits / CSA 2026 scanner bypass vectors: whitespace/newline padding inflation (`SEC-018`), precompiled bytecode and hidden binaries (`.pyc`, `.pyo`, `.wasm`, `.class`, `.beam`, `SEC-019`), ZIP-backed document/archive and SVG indirection (`.docx`, `.xlsx`, `.pptx`, `.zip`, `.svg`, `SEC-020`), and cipher/split-stream obfuscation plus Levenshtein typosquatting (`SEC-021`).

@@ -648,7 +648,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run SkillForge Security & Token Linter
-        uses: gintingism/skillforge@v0.10.0
+        uses: gintingism/skillforge@v0.10.1
         with:
           path: '.'
           policy: '.skillforge-policy.yaml'
