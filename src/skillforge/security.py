@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import ast
+import io
 import json
 import os
 import re
 import subprocess
 import sys
 import tempfile
+import zipfile
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -48,6 +50,10 @@ OWASP_ASI_MAP: dict[str, str] = {
     "SEC-015": "ASI05:Unexpected-Code-Execution",
     "SEC-016": "ASI08:Cascading-Failures-and-Resource-Exhaustion",
     "SEC-017": "ASI04:Agentic-Supply-Chain-Vulnerabilities",
+    "SEC-018": "ASI01:Agent-Goal-Hijacking",
+    "SEC-019": "ASI04:Agentic-Supply-Chain-Vulnerabilities",
+    "SEC-020": "ASI01:Agent-Goal-Hijacking",
+    "SEC-021": "ASI04:Agentic-Supply-Chain-Vulnerabilities",
     "MCP-001": "ASI03:Identity-and-Privilege-Abuse",
     "MCP-002": "ASI05:Unexpected-Code-Execution",
     "MCP-003": "ASI04:Agentic-Supply-Chain-Vulnerabilities",
@@ -58,6 +64,16 @@ OWASP_ASI_MAP: dict[str, str] = {
     "MCP-008": "ASI04:Agentic-Supply-Chain-Vulnerabilities",
     "MCP-009": "ASI03:Identity-and-Privilege-Abuse",
     "MCP-010": "ASI03:Identity-and-Privilege-Abuse",
+    "MCP-011": "ASI05:Unexpected-Code-Execution",
+    "HOOK-001": "ASI05:Unexpected-Code-Execution",
+    "HOOK-002": "ASI03:Identity-and-Privilege-Abuse",
+    "HOOK-003": "ASI05:Unexpected-Code-Execution",
+    "HOOK-004": "ASI01:Agent-Goal-Hijacking",
+    "A2A-001": "ASI03:Identity-and-Privilege-Abuse",
+    "A2A-002": "ASI03:Identity-and-Privilege-Abuse",
+    "A2A-003": "ASI04:Agentic-Supply-Chain-Vulnerabilities",
+    "A2A-004": "ASI01:Agent-Goal-Hijacking",
+    "A2A-005": "ASI03:Identity-and-Privilege-Abuse",
 }
 
 
@@ -173,6 +189,10 @@ class AuditReport:
             "SEC-015": ("Obfuscated Payloads & Encoded Command Execution", "Detects base64 pipelines, hex-escapes, or obfuscated decoder execution wrappers (Cisco obfuscation)."),
             "SEC-016": ("Destructive Resource Abuse & Fork Bombs", "Detects fork bombs, disk exhaustion, or destructive block device formatting (Cisco resource_abuse)."),
             "SEC-017": ("Unpinned Runtime Dependency Injection", "Detects unpinned package installations from public registries without cryptographic hash or version locks (Cisco supply_chain)."),
+            "SEC-018": ("Whitespace Padding Scanner-Bypass", "Detects excessive whitespace or newline inflation designed to push malicious payloads past scanner truncation limits."),
+            "SEC-019": ("Precompiled Bytecode or Hidden Binary", "Detects precompiled bytecode (.pyc, .pyo, .wasm, .class, .beam) or native binaries hidden inside a skill package."),
+            "SEC-020": ("Archive or Document Indirection Payload", "Detects malicious instructions, scripts, macros, or XSS embedded inside ZIP-backed office documents, archives, or SVGs."),
+            "SEC-021": ("Cipher/Split-Stream Obfuscation or Typosquatting", "Detects base85/rot13/XOR/chr-join obfuscation, split-stream payload assembly, or typosquatted skill names."),
             "MCP-001": ("Plaintext Secret in MCP Environment", "Detects embedded API keys or high-entropy credentials inside MCP server env configuration."),
             "MCP-002": ("Shell Wrapper in MCP Command", "Detects arbitrary shell execution wrappers (bash, sh, powershell) in MCP server command fields."),
             "MCP-003": ("Unpinned Package in MCP Invocation", "Detects unpinned npx or uvx server launches without exact version tags in MCP args."),
@@ -183,6 +203,16 @@ class AuditReport:
             "MCP-008": ("MCP Tool Schema Rug-Pull Drift", "Detects post-install modifications to MCP server commands, arguments, or tool schemas against a pinned lockfile."),
             "MCP-009": ("Insecure Remote MCP Transport", "Detects unencrypted non-localhost http:// or ws:// remote MCP server URLs violating MCP 2026-07-28 transport rules."),
             "MCP-010": ("Hardcoded Bearer Token or Deprecated DCR in MCP Auth", "Detects static Authorization Bearer tokens in MCP headers or deprecated Dynamic Client Registration usage."),
+            "MCP-011": ("Unsafe MCP Apps UI Resource", "Detects unsafe CSP, wildcard postMessage, or inline script/credential phishing inside MCP Apps ui:// iframe resources."),
+            "HOOK-001": ("Malicious Shell Command in Agent Hook", "Detects dangerous shell pipelines, reverse shells, or credential access inside agent lifecycle hooks."),
+            "HOOK-002": ("Insecure HTTP Agent Hook", "Detects unencrypted non-localhost HTTP hook endpoints or hardcoded Bearer tokens in agent hook configs."),
+            "HOOK-003": ("Unsafe Function/Mod Hook Code", "Detects child_process execution, eval, or environment exfiltration in TypeScript/JavaScript function hooks."),
+            "HOOK-004": ("Prompt Injection in Agent Prompt Hook", "Detects override or stealth exfiltration directives inside LLM prompt hooks."),
+            "A2A-001": ("Insecure A2A Agent Endpoint", "Detects unencrypted non-localhost HTTP endpoints in A2A v1.0 Agent Cards."),
+            "A2A-002": ("Missing or Static A2A Authentication", "Detects absent authentication declarations or hardcoded secrets in A2A Agent Card securitySchemes."),
+            "A2A-003": ("Unsigned or Invalid A2A Agent Card JWS", "Detects missing or invalid JWS cryptographic signatures (A2A v1.0 §8.4) or insecure alg=none."),
+            "A2A-004": ("A2A Agent Card Prompt Poisoning", "Detects prompt injection or hidden unicode in A2A Agent Card descriptions or skill metadata."),
+            "A2A-005": ("Overbroad A2A Agent Capabilities", "Detects unauthenticated push notification webhooks or wildcard OAuth scopes in A2A Agent Cards."),
             "QUAL-008": ("Metadata Value Types", "Checks that metadata maps string keys to string values as the agentskills.io spec requires."),
             "QUAL-001": ("Trigger Quality", "Checks whether skill descriptions include explicit activation conditions."),
             "QUAL-002": ("Directory Alignment", "Checks whether directory name matches frontmatter name."),
@@ -194,7 +224,7 @@ class AuditReport:
         }
         sarif_rules: list[dict[str, Any]] = []
         for rid, (rname, rdesc) in sorted(rule_meta.items()):
-            tags = ["security", "agentic-ai"] if rid.startswith(("SEC", "MCP")) else ["quality"]
+            tags = ["security", "agentic-ai"] if rid.startswith(("SEC", "MCP", "HOOK", "A2A")) else ["quality"]
             asi_tag = OWASP_ASI_MAP.get(rid)
             if asi_tag:
                 tags.append(f"OWASP-{asi_tag}")
@@ -203,7 +233,7 @@ class AuditReport:
                 "name": rname,
                 "shortDescription": {"text": rdesc},
                 "defaultConfiguration": {
-                    "level": "error" if rid.startswith("SEC") else "warning"
+                    "level": "error" if rid.startswith(("SEC", "HOOK")) else "warning"
                 },
                 "properties": {"tags": tags},
             })
@@ -460,6 +490,110 @@ _UNPINNED_INSTALL_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 ]
 _EXECUTABLE_MAGIC = (b"\x7fELF", b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf", b"\xce\xfa\xed\xfe", b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe")
 _EXECUTABLE_ASSET_SUFFIXES = (".exe", ".dll", ".so", ".dylib", ".jar", ".sh", ".bat", ".cmd", ".ps1", ".scr", ".msi")
+_BYTECODE_SUFFIXES = (".pyc", ".pyo", ".wasm", ".class", ".beam")
+_BYTECODE_MAGIC = (b"\x00asm", b"\xca\xfe\xba\xbe", b"FOR1")
+_ARCHIVE_SUFFIXES = (".docx", ".xlsx", ".pptx", ".odt", ".zip", ".jar")
+_MAX_ARCHIVE_ENTRIES = 60
+_MAX_ARCHIVE_ENTRY_BYTES = 512 * 1024
+_MAX_ARCHIVE_TOTAL_BYTES = 5 * 1024 * 1024
+_XML_TAG_RE = re.compile(r"<[^>]+>")
+_SVG_XSS_PATTERN = re.compile(
+    r"(?i)(<\s*script\b|\bon(?:load|error|click|mouseover)\s*=|javascript\s*:|<\s*foreignObject\b)"
+)
+_WHITESPACE_RUN_RE = re.compile(r"[ \t\r\n]{8192,}")
+_CIPHER_SPLIT_PATTERNS: list[tuple[str, re.Pattern[str], Severity]] = [
+    (
+        "SEC-021",
+        re.compile(r"(?i)\b(?:b85decode|a85decode|b32decode)\s*\("),
+        Severity.HIGH,
+    ),
+    (
+        "SEC-021",
+        re.compile(r"(?i)\bcodecs\.decode\s*\([^)\n]*['\"]rot_?13['\"]"),
+        Severity.HIGH,
+    ),
+    (
+        "SEC-021",
+        re.compile(r"(?i)bytes\.fromhex\s*\([^)\n]{16,}\)\.decode\s*\("),
+        Severity.HIGH,
+    ),
+    (
+        "SEC-021",
+        re.compile(r"(?i)['\"]['\"]\.join\s*\(\s*chr\s*\("),
+        Severity.HIGH,
+    ),
+    (
+        "SEC-021",
+        re.compile(r"(?i)\bcat\s+[^\n|]*\*\s*\|\s*(?:base64\s+(?:-d|--decode)|sh\b|bash\b|python3?\b)"),
+        Severity.CRITICAL,
+    ),
+]
+_KNOWN_POPULAR_SKILLS: frozenset[str] = frozenset({
+    "agent-observability",
+    "antislop-code",
+    "architecture-griller",
+    "atomic-rollback-guard",
+    "attention-anchor-ledger",
+    "blast-radius-containment",
+    "browser-qa-verifier",
+    "caveman",
+    "code-review",
+    "cognitive-loop-breaker",
+    "context-compactor",
+    "contract-test-generator",
+    "database-query-safety",
+    "dependency-upgrade",
+    "flaky-test-isolation",
+    "git-workflow",
+    "git-worktree-isolation",
+    "human-in-the-loop",
+    "lethal-trifecta-guard",
+    "mcp-least-privilege-sentinel",
+    "mcp-tool-designer",
+    "memory-hygiene-sentinel",
+    "performance-profiler",
+    "runtime-api-verification",
+    "secret-sanitizer",
+    "security-threat-modeler",
+    "self-improving-agent",
+    "skill-architect",
+    "spec-driven-development",
+    "summarize",
+    "supply-chain-lockfile-guard",
+    "supply-chain-sentinel",
+    "systematic-debugging",
+    "tavily-search",
+    "test-driven-development",
+    "traceback-postmortem",
+    "zero-downtime-migration",
+    "pdf",
+    "docx",
+    "xlsx",
+    "pptx",
+    "frontend-design",
+    "web-design-guidelines",
+    "vercel-react-best-practices",
+})
+
+
+def _levenshtein_distance(a: str, b: str) -> int:
+    """Compute Levenshtein edit distance between two short strings."""
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, start=1):
+        curr = [i]
+        for j, cb in enumerate(b, start=1):
+            cost = 0 if ca == cb else 1
+            curr.append(min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost))
+        prev = curr
+    return prev[-1]
+
+
 _SPEC_NAME_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 
 _NETWORK_MODULES = frozenset({
@@ -595,10 +729,155 @@ class _PythonASTScanner(ast.NodeVisitor):
 class SkillAuditor:
     """Security and compliance auditor for SKILL.md and skill packages."""
 
+    def _scan_precompiled_bytecode(self, file_label: str, data: bytes) -> list[AuditFinding]:
+        """Flag precompiled bytecode (.pyc, .pyo, .wasm, .class, .beam) and hidden binaries (SEC-019)."""
+        findings: list[AuditFinding] = []
+        lower = file_label.lower()
+        is_pyc_ext = lower.endswith((".pyc", ".pyo"))
+        is_bytecode_ext = lower.endswith(_BYTECODE_SUFFIXES)
+        is_bytecode_magic = data.startswith(_BYTECODE_MAGIC)
+        is_pe = data.startswith(b"MZ") and b"PE\x00\x00" in data[:1024]
+        is_native = is_pe or data.startswith(_EXECUTABLE_MAGIC)
+
+        if is_pyc_ext or is_bytecode_ext or is_bytecode_magic:
+            findings.append(
+                AuditFinding(
+                    rule_id="SEC-019",
+                    severity=Severity.CRITICAL,
+                    message=(
+                        f"Precompiled bytecode artifact detected ({file_label}); "
+                        "bytecode hides executable logic from source inspection (Trail of Bits bypass vector)"
+                    ),
+                    file=file_label,
+                )
+            )
+        elif not file_label.startswith("assets/") and (
+            is_native or lower.endswith((".exe", ".dll", ".so", ".dylib"))
+        ):
+            findings.append(
+                AuditFinding(
+                    rule_id="SEC-019",
+                    severity=Severity.HIGH,
+                    message=f"Hidden native binary detected outside assets/ ({file_label})",
+                    file=file_label,
+                )
+            )
+        return findings
+
+    def _scan_archive_or_svg(self, file_label: str, data: bytes) -> list[AuditFinding]:
+        """Inspect ZIP-backed office documents, archives, and SVGs for hidden instructions/scripts (SEC-020)."""
+        findings: list[AuditFinding] = []
+        lower = file_label.lower()
+
+        if lower.endswith(".svg"):
+            try:
+                svg_text = data.decode("utf-8", errors="replace")
+            except Exception:
+                svg_text = ""
+            if _SVG_XSS_PATTERN.search(svg_text):
+                findings.append(
+                    AuditFinding(
+                        rule_id="SEC-020",
+                        severity=Severity.HIGH,
+                        message=f"Executable script or event handler detected inside SVG asset ({file_label})",
+                        file=file_label,
+                    )
+                )
+            return findings
+
+        is_zip = lower.endswith(_ARCHIVE_SUFFIXES) or data.startswith(b"PK\x03\x04")
+        if not is_zip:
+            return findings
+
+        try:
+            with zipfile.ZipFile(io.BytesIO(data), "r") as zf:
+                total_read = 0
+                for idx, info in enumerate(zf.infolist()):
+                    if idx >= _MAX_ARCHIVE_ENTRIES:
+                        break
+                    if info.is_dir():
+                        continue
+                    member_lower = info.filename.lower()
+                    if member_lower.endswith("vbaproject.bin") or "macros/" in member_lower:
+                        findings.append(
+                            AuditFinding(
+                                rule_id="SEC-020",
+                                severity=Severity.HIGH,
+                                message=f"Office macro payload ({info.filename}) embedded inside document archive",
+                                file=f"{file_label}!{info.filename}",
+                            )
+                        )
+                        continue
+                    if member_lower.endswith((".sh", ".ps1", ".bat", ".cmd", ".exe", ".pyc", ".pyo")):
+                        findings.append(
+                            AuditFinding(
+                                rule_id="SEC-020",
+                                severity=Severity.HIGH,
+                                message=f"Executable or script ({info.filename}) hidden inside archive",
+                                file=f"{file_label}!{info.filename}",
+                            )
+                        )
+                    if info.file_size > _MAX_ARCHIVE_ENTRY_BYTES:
+                        continue
+                    if total_read + info.file_size > _MAX_ARCHIVE_TOTAL_BYTES:
+                        break
+                    raw_entry = zf.read(info)
+                    total_read += len(raw_entry)
+                    if member_lower.endswith((".xml", ".rels", ".txt", ".md", ".json", ".py", ".sh", ".js", ".html")):
+                        decoded = raw_entry.decode("utf-8", errors="replace")
+                        cleaned = _XML_TAG_RE.sub(" ", decoded) if member_lower.endswith((".xml", ".rels", ".html")) else decoded
+                        nested = self._scan_text(cleaned, f"{file_label}!{info.filename}")
+                        if nested:
+                            findings.append(
+                                AuditFinding(
+                                    rule_id="SEC-020",
+                                    severity=Severity.CRITICAL,
+                                    message=(
+                                        f"Document-archive indirection: hidden malicious instruction ({nested[0].rule_id}) "
+                                        f"embedded inside '{info.filename}'"
+                                    ),
+                                    file=f"{file_label}!{info.filename}",
+                                    snippet=(nested[0].snippet or "")[:100] or None,
+                                )
+                            )
+        except (zipfile.BadZipFile, OSError, RuntimeError):
+            return findings
+        return findings
+
+    def _check_typosquatting(self, skill_name: str) -> list[AuditFinding]:
+        """Detect potential typosquatting against known popular/built-in skill names (SEC-021)."""
+        normalized = skill_name.strip().lower()
+        if not normalized or normalized in _KNOWN_POPULAR_SKILLS or len(normalized) < 6:
+            return []
+        for popular in sorted(_KNOWN_POPULAR_SKILLS):
+            if len(popular) < 6:
+                continue
+            max_dist = 2 if len(popular) >= 12 else 1
+            if abs(len(normalized) - len(popular)) > max_dist:
+                continue
+            dist = _levenshtein_distance(normalized, popular)
+            if 0 < dist <= max_dist:
+                return [
+                    AuditFinding(
+                        rule_id="SEC-021",
+                        severity=Severity.HIGH,
+                        message=(
+                            f"Potential skill typosquatting: '{skill_name}' is edit distance {dist} "
+                            f"from known skill '{popular}' (ClawHavoc supply-chain pattern)"
+                        ),
+                        file="SKILL.md",
+                        snippet=f"name: {skill_name}",
+                    )
+                ]
+        return []
+
     def _scan_asset(self, rel_path: str, data: bytes) -> list[AuditFinding]:
-        """Flag executable payloads in assets/ and scan text assets like any other prose."""
+        """Flag executable payloads, bytecode, and archive indirection in assets/ and scan text assets."""
         file_label = f"assets/{rel_path}"
         findings: list[AuditFinding] = []
+        findings.extend(self._scan_precompiled_bytecode(file_label, data))
+        findings.extend(self._scan_archive_or_svg(file_label, data))
+
         is_pe = data.startswith(b"MZ") and b"PE\x00\x00" in data[:1024]
         if is_pe or data.startswith(_EXECUTABLE_MAGIC):
             findings.append(
@@ -784,6 +1063,11 @@ class SkillAuditor:
         for rel_path, data in package.assets.items():
             findings.extend(self._scan_asset(rel_path, data))
 
+        for rel_path, data in sorted(package.unexpected_binaries.items()):
+            findings.extend(self._scan_precompiled_bytecode(rel_path, data))
+            findings.extend(self._scan_archive_or_svg(rel_path, data))
+
+        findings.extend(self._check_typosquatting(package.skill.name))
         findings.extend(self._check_lethal_trifecta(package))
 
         bad_metadata = [
@@ -1015,17 +1299,56 @@ class SkillAuditor:
     def audit_file_or_dir(self, path: Path, *, sandbox: bool = False) -> AuditReport:
         """Audit a file or directory from disk."""
         package = SkillPackage.load(path)
-        return self.audit_package(package, sandbox=sandbox)
+        report = self.audit_package(package, sandbox=sandbox)
+        skill_file = path / "SKILL.md" if path.is_dir() else path
+        if skill_file.is_file():
+            try:
+                raw_text = skill_file.read_text(encoding="utf-8")
+            except OSError:
+                raw_text = ""
+            if raw_text and not any(f.rule_id == "SEC-018" and f.file == "SKILL.md" for f in report.findings):
+                report.findings.extend(self._scan_whitespace_inflation(raw_text, "SKILL.md"))
+        return report
+
+    def _scan_whitespace_inflation(self, text: str, filename: str) -> list[AuditFinding]:
+        """Detect whitespace or newline inflation used to bypass scanner truncation windows (SEC-018)."""
+        max_blank_run = 0
+        current_run = 0
+        for line in text.splitlines():
+            if not line.strip():
+                current_run += 1
+                if current_run > max_blank_run:
+                    max_blank_run = current_run
+            else:
+                current_run = 0
+        if max_blank_run >= 150 or _WHITESPACE_RUN_RE.search(text):
+            return [
+                AuditFinding(
+                    rule_id="SEC-018",
+                    severity=Severity.HIGH,
+                    message=(
+                        f"Excessive whitespace padding detected ({max_blank_run} consecutive blank lines); "
+                        "possible Trail-of-Bits-style scanner truncation bypass"
+                    ),
+                    file=filename,
+                )
+            ]
+        return []
 
     def audit_content(self, content: str, target_name: str = "document") -> AuditReport:
         """Audit raw SKILL.md content without disk operations."""
+        raw_ws_findings = self._scan_whitespace_inflation(content, "SKILL.md")
         skill = parse_skill(content)
         package = SkillPackage(skill=skill)
-        return self.audit_package(package, check_resources=False)
+        report = self.audit_package(package, check_resources=False)
+        if raw_ws_findings and not any(f.rule_id == "SEC-018" and f.file == "SKILL.md" for f in report.findings):
+            report.findings.extend(raw_ws_findings)
+        return report
 
     def _scan_text(self, text: str, filename: str) -> list[AuditFinding]:
-        """Scan general text for hidden unicode and prompt injections."""
+        """Scan general text for hidden unicode, whitespace inflation, and prompt injections."""
         findings: list[AuditFinding] = []
+        findings.extend(self._scan_whitespace_inflation(text, filename))
         lines = text.splitlines()
 
         for idx, line in enumerate(lines, start=1):
@@ -1226,6 +1549,24 @@ class SkillAuditor:
                             rule_id=rule_id,
                             severity=Severity.MEDIUM if quoted_defense else Severity.HIGH,
                             message=f"Unpinned runtime package installation from public registry: '{match_inst.group(0).strip()}'",
+                            file=filename,
+                            line=idx,
+                            snippet=line.strip()[:100],
+                        )
+                    )
+
+            # Check cipher / split-stream obfuscation bypasses (SEC-021)
+            for rule_id, pattern, severity in _CIPHER_SPLIT_PATTERNS:
+                match_cipher = pattern.search(line)
+                if match_cipher:
+                    quoted_defense = bool(
+                        _DEFENSIVE_CONTEXT_PATTERN.search(line) and re.search(r"[\"'`]", line)
+                    )
+                    findings.append(
+                        AuditFinding(
+                            rule_id=rule_id,
+                            severity=Severity.MEDIUM if quoted_defense else severity,
+                            message=f"Cipher or split-stream obfuscation pattern detected: '{match_cipher.group(0)[:60]}'",
                             file=filename,
                             line=idx,
                             snippet=line.strip()[:100],

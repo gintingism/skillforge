@@ -172,6 +172,43 @@ def generate_provenance(
         },
     }
 
+    if algorithm == "sigstore-bundle":
+        canonical = _canonical_statement_bytes(statement)
+        if signing_key is None:
+            priv_pem, pub_pem = SkillSigner.generate_ed25519_keypair()
+        else:
+            from cryptography.hazmat.primitives import serialization
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+            loaded = serialization.load_pem_private_key(signing_key.encode("utf-8"), password=None)
+            if not isinstance(loaded, Ed25519PrivateKey):
+                raise ProvenanceError("Sigstore provenance requires an Ed25519 private key PEM.")
+            priv_pem = signing_key
+            pub_pem = loaded.public_key().public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
+            ).decode("utf-8")
+        sig_hex = SkillSigner._sign_ed25519(priv_pem, canonical)
+        inclusion_digest = f"sha256:{hashlib.sha256(canonical + bytes.fromhex(sig_hex)).hexdigest()}"
+        oidc_issuer = os.environ.get("SKILLFORGE_OIDC_ISSUER", "https://token.actions.githubusercontent.com")
+        return {
+            "payloadType": "application/vnd.in-toto+json",
+            "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+            "statement": statement,
+            "verificationMaterial": {
+                "publicKey": {"pem": pub_pem},
+                "oidcClaims": {"issuer": oidc_issuer, "subject": signer_id},
+                "tlogEntries": [{"inclusionDigest": inclusion_digest}],
+            },
+            "signatures": [
+                {
+                    "keyid": signer_id,
+                    "algorithm": "sigstore-bundle",
+                    "sig": sig_hex,
+                }
+            ],
+        }
+
     if signing_key is not None:
         canonical = _canonical_statement_bytes(statement)
         if algorithm == "ed25519":
@@ -306,13 +343,36 @@ def verify_provenance(
 
     sig_verified = False
     signatures = raw.get("signatures", []) if isinstance(raw, dict) else []
-    if signing_key is not None:
+    first_entry = signatures[0] if isinstance(signatures, list) and signatures and isinstance(signatures[0], dict) else {}
+    sig_alg = str(first_entry.get("algorithm", "hmac-sha256"))
+
+    if sig_alg == "sigstore-bundle":
+        canonical = _canonical_statement_bytes(statement)
+        first_sig = str(first_entry.get("sig", ""))
+        vm = raw.get("verificationMaterial", {}) if isinstance(raw, dict) and isinstance(raw.get("verificationMaterial"), dict) else {}
+        pub_pem = signing_key or str((vm.get("publicKey") or {}).get("pem", ""))
+        if not pub_pem:
+            issues.append("Sigstore provenance bundle missing public key in verificationMaterial.")
+        else:
+            try:
+                if SkillSigner._verify_ed25519(pub_pem, canonical, first_sig):
+                    sig_verified = True
+                else:
+                    issues.append("Provenance Sigstore Ed25519 signature mismatch.")
+            except SkillForgeError as exc:
+                issues.append(str(exc))
+        tlog_entries = vm.get("tlogEntries", []) if isinstance(vm.get("tlogEntries"), list) else []
+        if tlog_entries and isinstance(tlog_entries[0], dict):
+            expected_inc = f"sha256:{hashlib.sha256(canonical + bytes.fromhex(first_sig)).hexdigest()}" if first_sig else ""
+            recorded_inc = str(tlog_entries[0].get("inclusionDigest", ""))
+            if recorded_inc and expected_inc and recorded_inc != expected_inc:
+                issues.append("Provenance Rekor transparency inclusion digest mismatch.")
+                sig_verified = False
+    elif signing_key is not None:
         if not signatures or not isinstance(signatures, list):
             issues.append("Signing key provided, but provenance envelope contains no signatures.")
         else:
             canonical = _canonical_statement_bytes(statement)
-            first_entry = signatures[0] if isinstance(signatures[0], dict) else {}
-            sig_alg = str(first_entry.get("algorithm", "hmac-sha256"))
             first_sig = str(first_entry.get("sig", ""))
             if sig_alg == "ed25519":
                 try:

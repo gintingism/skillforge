@@ -596,11 +596,37 @@ Pin MCP server commands and tool schemas against post-install rug-pulls (`MCP-00
 skillforge audit-mcp ./mcp.json --pin-lock ./mcp-lock.json
 skillforge audit-mcp ./mcp.json --verify-lock ./mcp-lock.json
 
-# Validate strict agentskills.io specification limits
+# Validate strict AAIF 6-field agentskills.io limits & auto-normalize
 skillforge validate ./skills/my-skill --strict-spec
+skillforge normalize ./skills/my-skill --write
 
-# Install PreToolUse runtime security guard hook into .claude/settings.json
-skillforge hooks . --init
+# Install multi-event security guard hooks across Claude, Cursor, Gemini, Codex
+skillforge hooks . --init --target claude,cursor,gemini,codex --events PreToolUse,PostToolUse,UserPromptSubmit
+```
+
+### 32. Anti-Bypass Hardening, SEP-2640, Plugins, Skill Packs, A2A & Sigstore (`v0.10.0`)
+
+Defend against Trail of Bits / CSA 2026 scanner bypasses (`SEC-018`–`SEC-021`), audit full Agent Plugins 1.0 bundles (`HOOK-001`–`HOOK-004`), verify A2A v1.0 Agent Cards (`A2A-001`–`A2A-005`), generate SEP-2640 SHA-256 manifests, proxy Streamable-HTTP MCP servers, sign with Sigstore Bundle v0.3, and run custom YAML rule packs:
+
+```bash
+# Audit with custom YAML/YARA-style rule packs or opt-in LLM semantic judge
+skillforge audit ./skills/my-skill --rules ./corp-rules.yaml
+skillforge audit ./skills/my-skill --llm-judge
+
+# Probe live MCP servers, audit MCP Apps (MCP-011) & Server Cards, or proxy Streamable-HTTP
+skillforge audit-mcp ./mcp.json --live
+skillforge audit-mcp --server-card ./server-card.json
+skillforge firewall-mcp --http-upstream https://mcp.example.com/mcp --port 8787
+
+# Audit Agent Plugins 1.0 bundles, manage team Skill Packs, and audit/sign A2A Agent Cards
+skillforge audit-plugin ./my-plugin
+skillforge pack-bundle init ./skillforge-pack.yaml && skillforge pack-bundle install ./skillforge-pack.yaml
+skillforge audit-a2a ./agent-card.json --sign-key a2a.pem --key-file a2a.pem.pub
+
+# Generate/verify SEP-2640 manifests and Sigstore Bundle v0.3 OIDC attestations
+skillforge mcp-manifest ./skills/my-skill -o manifest.json
+skillforge sign ./skills/my-skill --sigstore --oidc-issuer https://token.actions.githubusercontent.com
+skillforge provenance ./skills/my-skill --sigstore
 ```
 
 ---
@@ -622,7 +648,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run SkillForge Security & Token Linter
-        uses: gintingism/skillforge@v0.9.0
+        uses: gintingism/skillforge@v0.10.0
         with:
           path: '.'
           policy: '.skillforge-policy.yaml'
@@ -642,7 +668,7 @@ jobs:
 
 ## Model Context Protocol (MCP) Integration
 
-SkillForge includes a native MCP server conforming to the Agent Plugins 1.0 specification (configured via `mcp.json`), so coding agents can inspect, search, and audit skills during their development loop:
+SkillForge includes a native MCP server conforming to the Agent Plugins 1.0 specification and SEP-2640 (`io.modelcontextprotocol/skills`), configured via `mcp.json`, so coding agents can inspect, search, and audit skills during their development loop:
 
 ```json
 {
@@ -662,11 +688,12 @@ Exposed MCP tools (supports `--transport stdio|sse|streamable-http`):
 - `search_skills(query, limit)`: Search local and built-in skill catalogs.
 - `get_skill(name)`: Read the full `SKILL.md` instructions.
 - `get_skill_resource(name, resource_path)`: Read disclosed `references/*`, `scripts/*`, or text `assets/*` files on demand with path traversal protection.
+- `skills_list(cursor, limit)` / `skills_get(uri)` / `read_skill_directory(uri)` / `get_server_capabilities()`: Native SEP-2640 (`io.modelcontextprotocol/skills`) manifest and directory discovery endpoints.
 - `validate_skill(content)`: Test frontmatter syntax in memory.
 - `audit_skill(content)`: Audit a raw skill document for prompt injections, AST taint flows, and malicious patterns.
 - `audit_mcp_config(config_path)`: Audit an `mcp.json` configuration for plaintext secrets, shell wrappers, and tool poisoning.
 - `check_policy(content, policy_path)`: Evaluate a `SKILL.md` document against a `.skillforge-policy.yaml` gate.
-- `skill://{name}`: Resource URI for direct document retrieval.
+- `skill://{name}` & `skill://{name}/SKILL.md`: Resource URIs for direct document retrieval.
 
 ---
 

@@ -6,10 +6,10 @@ This document tracks the current development status, delivered milestones, and f
 
 ## Current Project Status
 
-- **Latest Stable Version:** `v0.9.0`
+- **Latest Stable Version:** `v0.10.0`
 - **PyPI Package:** [`agent-skillforge`](https://pypi.org/project/agent-skillforge/)
-- **Release Status:** Production Ready (182 unit tests passing across Python 3.11 and 3.12).
-- **Standards Conformance:** Agentic AI Foundation `agentskills.io`, Agent Plugins 1.0, Model Context Protocol (`2026-07-28`), OWASP Agentic Top 10 (`2026` `ASI01`–`ASI10`), OASIS SARIF v2.1.0, CycloneDX v1.6 AIBOM, SPDX v2.3, SLSA v1.0 Provenance (`in-toto` v1, HMAC-SHA256 & Ed25519), and HOL Guard Supply-Chain Audit.
+- **Release Status:** Production Ready (194 unit tests passing across Python 3.11 and 3.12, `mypy --strict` clean across 34 source files).
+- **Standards Conformance:** Agentic AI Foundation `agentskills.io` (strict 6-field), Agent Plugins 1.0, Model Context Protocol (`2026-07-28` + SEP-2640 `io.modelcontextprotocol/skills` + MCP Apps + Server Cards), Agent2Agent (`A2A` v1.0 JWS), OWASP Agentic Top 10 (`2026` `ASI01`–`ASI10`), OASIS SARIF v2.1.0, CycloneDX v1.6 AIBOM, SPDX v2.3, SLSA v1.0 Provenance (`in-toto` v1, HMAC-SHA256, Ed25519 & Sigstore Bundle v0.3), and HOL Guard Supply-Chain Audit.
 
 ---
 
@@ -23,45 +23,36 @@ timeline
     v0.5.0 : Sandbox jail, MCP firewall, multi-model benchmark, LSP, TUI
     v0.7.0 : Policy-as-code, AIBOM/SLSA, rule sync, MCP sweep, telemetry
     v0.8.0 : Ed25519 signing & SLSA provenance, bwrap OS jail, OpenCode/Roo/Codex/Gemini adapters
-    v0.9.0 (Current) : MCP rug-pull lockfile (MCP-008..010), OWASP ASI01-10 mapping, strict-spec, PreToolUse hooks
+    v0.9.0 : MCP rug-pull lockfile (MCP-008..010), OWASP ASI01-10 mapping, strict-spec, PreToolUse hooks
+    v0.10.0 (Current) : Anti-bypass SEC-018..021, SEP-2640 MCP skills, AAIF normalize, HTTP firewall, Plugins/A2A/Sigstore
 ```
-
-### Delivered in v0.2.0 (Current Release)
-- **Advanced Static Security:** Added SEC-008 (Python AST taint flow tracking), SEC-010 (deceptive installer patterns), and SEC-011 (executable binaries disguised in assets).
-- **Token Profiling & Optimization:** Shipped `skillforge budget` to measure startup pointer burn versus on-demand body costs, and `skillforge optimize` for automated extraction into `references/`.
-- **Context Hygiene:** Added `skillforge lint-context` to audit `AGENTS.md`, `CLAUDE.md`, and `.cursorrules` for token limits, contradictory constraints, and filler words.
-- **MCP Server:** Implemented native JSON-RPC Model Context Protocol server exposing `search_skills`, `get_skill`, `get_skill_resource`, and `audit_skill`.
-- **Trigger Evals:** Built `skillforge test` to execute deterministic positive and negative activation test suites against skill descriptions.
-- **Expanded Adapters:** Full support for Google Antigravity, Windsurf, Cline, and universal `.agents/` registries.
 
 ---
 
-## Future Roadmap
+## Delivered Milestones
 
-### v0.3.0 (Delivered: Dynamic Sandboxing, Attestation & Ecosystem Hub)
-- [x] **Offline Execution Sandbox Harness:** Isolated Python subprocess runner (`skillforge audit --sandbox`) blocking outbound sockets and subprocess calls while monitoring canary environment secrets.
-- [x] **Granular Allowed-Tools Enforcer (`SEC-012`):** Static verification that shell snippets and bundled scripts adhere to the tools declared in `allowed-tools`.
-- [x] **OWASP 2026 Agentic Defenses (`SEC-013` & `SEC-014`):** Persistent memory/git hook poisoning detection and Lethal Trifecta compound risk analysis.
-- [x] **Cisco Skill-Scanner Rule Alignment (`SEC-015`, `SEC-016`, `SEC-017`):** Obfuscation detection, fork bomb/resource abuse scanner, and unpinned package installation auditor.
-- [x] **MCP Configuration Auditor (`skillforge audit-mcp`):** Security auditor for `mcp.json` detecting plaintext secrets, shell command wrappers, unpinned packages, and root filesystem grants (`MCP-001` to `MCP-004`).
-- [x] **Skill Registry Indexer & Remote Search:** CLI crawler to scan repositories for `SKILL.md` packages and index them into discovery cache (`skillforge index`, `skillforge search-remote`) with automated install security gates.
-- [x] **Cryptographic Attestation & Signatures:** Tamper-evident HMAC-SHA256 release signing and manifest verification for skill packages and lockfiles (`skillforge sign`, `skillforge verify-signature`, `skillforge keygen`).
-- [x] **Language Server Protocol (LSP) Daemon:** Standard LSP 3.17 server (`skillforge lsp`) delivering real-time diagnostics, frontmatter linting, and completion in Cursor, VS Code, and Neovim.
-- [x] **Interactive Terminal Dashboard:** Rich terminal dashboard (`skillforge tui`) for live token budget visualization, security posture grade cards, and adapter state inspection.
+### v0.10.0 (Current Release: Anti-Bypass Hardening, AAIF Standards & Full Protocol Coverage)
+- [x] **Anti-Bypass Hardening (`SEC-018`–`SEC-021`):** Whitespace inflation detection, precompiled bytecode/hidden binary scanning (`.pyc`, `.wasm`, `.class`), ZIP/office document and SVG indirection inspection (`.docx`, `.xlsx`, `.pptx`, `.zip`, `.svg`), and cipher/split-stream obfuscation plus Levenshtein typosquatting checks.
+- [x] **Native MCP `io.modelcontextprotocol/skills` Extension (SEP-2640):** `skills_list`, `skills_get`, `read_skill_directory`, `get_server_capabilities`, `skill://{name}/SKILL.md`, and `skillforge mcp-manifest [--verify]` with SHA-256 file manifests.
+- [x] **AAIF Strict 6-Field Spec & Normalizer (`skillforge normalize`):** Enforces the 6-field `agentskills.io` frontmatter allowlist, length limits, and portable migration of custom keys under `metadata:`.
+- [x] **Live MCP Introspection, MCP Apps (`MCP-011`), Server Cards & Streamable-HTTP Firewall:** `audit-mcp --live`, `audit-mcp --server-card`, and `firewall-mcp --http-upstream` with stateless MCP `2026-07-28` header validation.
+- [x] **Agent Plugins 1.0, Skill Packs & Multi-Target Hooks:** `audit-plugin` (`HOOK-001`–`HOOK-004`), `pack-bundle init|audit|install`, and multi-target/multi-event hooks (`PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `--check-response`).
+- [x] **A2A v1.0 Agent Card Auditor & Sigstore Bundle v0.3:** `audit-a2a` (`A2A-001`–`A2A-005` + Ed25519 JWS §8.4 signing) and keyless OIDC/Rekor Sigstore bundles (`sign --sigstore`, `provenance --sigstore`).
+- [x] **Developer Extensibility:** Native `.pre-commit-hooks.yaml`, custom YAML/YARA-style rule packs (`audit --rules`), and opt-in prompt-hardened LLM semantic judge (`audit --llm-judge`).
 
-### v1.0.0 (Delivered: Runtime Zero-Trust, Supply-Chain Provenance & Multi-Model Evaluation)
-- [x] **MCP Runtime Security Firewall (`skillforge firewall-mcp`):** Inline JSON-RPC proxy and traffic inspector blocking prompt injections, command smuggling, credential traversal, and SSRF while redacting leaked secrets (`FW-001` to `FW-006`).
-- [x] **Cross-Agent Semantic Evaluation Benchmark (`skillforge bench`):** Automated benchmark matrix measuring trigger precision, recall, F1 score, and false positive rates across multiple LLM routing profiles (`claude-sonnet-router`, `gemini-flash-router`, `gpt-strict-router`).
-- [x] **Progressive Disclosure Slicer (`skillforge refactor-progressive`):** Automated refactoring engine that slices monolithic skills into `references/*.md` while verifying 100% semantic and code block preservation.
-- [x] **Zero-Trust Capability Jail Runner (`skillforge run-sandboxed`):** Ephemeral filesystem and runtime capability jail blocking network sockets, subprocess spawning, and out-of-jail writes for bundled Python scripts.
-- [x] **CycloneDX v1.6 AIBOM & SPDX v2.3 Generator (`skillforge sbom`):** Automated Software Bill of Materials inventorying active skills, SHA-256 digests, token budgets, MCP servers, and security vulnerabilities.
-- [x] **SLSA v1.0 Provenance & in-toto Attestation (`skillforge provenance`, `verify-provenance`):** Tamper-evident `in-toto` v1 statements recording per-file SHA-256 subjects, builder metadata, and HMAC-SHA256 signatures.
-- [x] **Skill Dependency Graph & Topological Resolver (`skillforge graph`):** Topological execution order solver detecting circular dependencies (`DEP-001`), missing skills (`DEP-002`), and `allowed-tools` privilege escalation (`DEP-003`).
-- [x] **Universal Context Rule Synchronizer (`skillforge sync-rules`):** Single-source-of-truth compiler from `AGENTS.md` to `.cursor/rules/00-core.mdc`, `CLAUDE.md`, `.cursorrules`, `.windsurfrules`, and `.clinerules` with drift and directive conflict detection (`SYNC-001`, `SYNC-002`).
-- [x] **Policy-as-Code & Expiring Suppressions (`skillforge policy`, `audit --policy`):** Declarative `.skillforge-policy.yaml` rules supporting minimum score gates, severity overrides, and scoped suppressions with mandatory reasons and expiration dates.
-- [x] **MCP Tool Poisoning, Shadowing & Machine Sweep (`MCP-005` to `MCP-007`, `scan-all`):** Deep inspection of MCP tool descriptions/schemas for poisoning and shadowing, cross-server toxic flow analysis, and workspace/home auto-discovery sweeps.
-- [x] **Lifecycle Updates & Lockfile Interop (`check`, `update`, `migrate-lock`):** Upstream lockfile update verification, security-gated upgrades, and `vercel-labs/skills` (`skills-lock.json`) migration.
-- [x] **Local Offline Usage Telemetry (`skillforge telemetry`):** Zero-network local JSONL usage ledger tracking MCP tool invocations, token loads, and unused startup pointer overhead (honors `DO_NOT_TRACK=1`).
+### v0.9.0 & Earlier (Delivered Foundation)
+- [x] **Core Auditing & Sandboxing:** `SEC-001`–`SEC-017`, Python AST taint flow, `audit --sandbox`, `run-sandboxed` with Linux `bwrap` OS jail, and OWASP `ASI01`–`ASI10` SARIF/AIBOM mapping.
+- [x] **MCP Security Suite:** `audit-mcp` (`MCP-001`–`MCP-010`), `mcp-lock.json` rug-pull verification, `firewall-mcp` (`FW-001`–`FW-006`, `--wrap-config`), and machine-wide `scan-all`.
+- [x] **Supply Chain & Governance:** CycloneDX 1.6 AIBOM & SPDX 2.3 (`sbom`), SLSA v1.0 `in-toto` provenance (HMAC-SHA256 & Ed25519), `.skillforge-policy.yaml` policy-as-code, `graph` topological resolver, and `sync-rules` universal context synchronizer.
+- [x] **Token & Ecosystem Tooling:** `budget`, `optimize`, `refactor-progressive`, `lint-context`, `bench`, `test`, `lsp`, `tui`, `telemetry`, `check`, `update`, `migrate-lock`, and 37 built-in zero-slop skills.
+
+---
+
+## Future Roadmap (v1.0.0 GA & Beyond)
+- [ ] **Live Fulcio/Rekor Online Transparency Integration:** Optional live network signing & inclusion proof verification against public/private Sigstore instances alongside offline bundle verification.
+- [ ] **VS Code / Cursor / JetBrains Native IDE Extension:** First-party extension wrapping `skillforge lsp`, inline token budget lenses, and one-click `normalize` quick fixes.
+- [ ] **MCP Tasks & Events Extensions Support:** Audit and firewall long-running MCP Tasks (`SEP-3570`) and upstream MCP Event subscriptions.
+- [ ] **Federated Trust & Curated Organization Registries:** Signed team registry mirrors with automatic quarantine workflows and policy enforcement.
 
 ---
 

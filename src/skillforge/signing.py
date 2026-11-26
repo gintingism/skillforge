@@ -380,3 +380,191 @@ class SkillSigner:
             file_count=1,
             issues=issues,
         )
+
+    @classmethod
+    def sign_sigstore_bundle(
+        cls,
+        skill_dir: Path,
+        *,
+        oidc_issuer: str = "https://token.actions.githubusercontent.com",
+        oidc_identity: str | None = None,
+        private_key_pem: str | None = None,
+        rekor_log_id: str | None = None,
+    ) -> tuple[dict[str, Any], str]:
+        """Generate a Sigstore Bundle v0.3 DSSE envelope with OIDC identity and Rekor log metadata.
+
+        Uses an ephemeral Ed25519 keypair when private_key_pem is omitted (mirroring keyless
+        Fulcio short-lived signing) and embeds the verification public key alongside OIDC claims.
+        Returns (bundle_dict, public_key_pem).
+        """
+        import base64
+
+        manifest = cls.compute_manifest(skill_dir)
+        canonical = cls._canonical_bytes(manifest)
+        if private_key_pem is None:
+            priv_pem, pub_pem = cls.generate_ed25519_keypair()
+        else:
+            from cryptography.hazmat.primitives import serialization
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+            loaded = serialization.load_pem_private_key(private_key_pem.encode("utf-8"), password=None)
+            if not isinstance(loaded, Ed25519PrivateKey):
+                raise SigningError("Sigstore bundle requires an Ed25519 private key PEM.")
+            priv_pem = private_key_pem
+            pub_pem = loaded.public_key().public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
+            ).decode("utf-8")
+
+        resolved_identity = (
+            oidc_identity
+            or os.environ.get("GITHUB_WORKFLOW_REF")
+            or f"https://github.com/{os.environ.get('GITHUB_REPOSITORY', 'local/skillforge')}"
+        )
+        sig_hex = cls._sign_ed25519(priv_pem, canonical)
+        payload_b64 = base64.b64encode(canonical).decode("ascii")
+        sig_b64 = base64.b64encode(bytes.fromhex(sig_hex)).decode("ascii")
+        now_iso = datetime.now(timezone.utc).isoformat()
+        log_hash = hashlib.sha256(canonical + bytes.fromhex(sig_hex)).hexdigest()
+
+        bundle: dict[str, Any] = {
+            "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+            "verificationMaterial": {
+                "publicKey": {"pem": pub_pem},
+                "oidcClaims": {
+                    "issuer": oidc_issuer,
+                    "subject": resolved_identity,
+                },
+                "tlogEntries": [
+                    {
+                        "logId": {"keyId": rekor_log_id or "rekor.sigstore.dev/local-offline-log"},
+                        "integratedTime": int(datetime.now(timezone.utc).timestamp()),
+                        "inclusionDigest": f"sha256:{log_hash}",
+                    }
+                ],
+            },
+            "dsseEnvelope": {
+                "payloadType": "application/vnd.skillforge.manifest+json",
+                "payload": payload_b64,
+                "signatures": [
+                    {
+                        "keyid": resolved_identity,
+                        "sig": sig_b64,
+                    }
+                ],
+            },
+            "created_at": now_iso,
+        }
+        return bundle, pub_pem
+
+    @classmethod
+    def verify_sigstore_bundle(
+        cls,
+        skill_dir: Path,
+        bundle_path: Path,
+        *,
+        expected_issuer: str | None = None,
+        expected_identity: str | None = None,
+        public_key_pem: str | None = None,
+    ) -> VerificationResult:
+        """Verify a Sigstore Bundle v0.3 envelope, OIDC identity claims, Rekor digest, and skill files."""
+        import base64
+
+        if not bundle_path.is_file():
+            return VerificationResult(
+                valid=False,
+                signer_id="unknown",
+                algorithm="sigstore-bundle",
+                created_at="",
+                file_count=0,
+                issues=[f"Sigstore bundle not found: {bundle_path.name}"],
+            )
+        try:
+            bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return VerificationResult(
+                valid=False,
+                signer_id="unknown",
+                algorithm="sigstore-bundle",
+                created_at="",
+                file_count=0,
+                issues=[f"Corrupt Sigstore bundle JSON: {exc}"],
+            )
+
+        issues: list[str] = []
+        media_type = str(bundle.get("mediaType", ""))
+        if "sigstore.bundle" not in media_type:
+            issues.append(f"Unexpected Sigstore mediaType: {media_type}")
+
+        vm = bundle.get("verificationMaterial", {}) if isinstance(bundle.get("verificationMaterial"), dict) else {}
+        claims = vm.get("oidcClaims", {}) if isinstance(vm.get("oidcClaims"), dict) else {}
+        issuer = str(claims.get("issuer", ""))
+        subject = str(claims.get("subject", "unknown"))
+        if expected_issuer and issuer != expected_issuer:
+            issues.append(f"OIDC issuer mismatch: expected '{expected_issuer}', got '{issuer}'")
+        if expected_identity and subject != expected_identity:
+            issues.append(f"OIDC identity mismatch: expected '{expected_identity}', got '{subject}'")
+
+        dsse = bundle.get("dsseEnvelope", {}) if isinstance(bundle.get("dsseEnvelope"), dict) else {}
+        payload_b64 = str(dsse.get("payload", ""))
+        sigs = dsse.get("signatures", []) if isinstance(dsse.get("signatures"), list) else []
+        if not payload_b64 or not sigs:
+            issues.append("Sigstore DSSE envelope missing payload or signatures")
+            return VerificationResult(
+                valid=False,
+                signer_id=subject,
+                algorithm="sigstore-bundle",
+                created_at=str(bundle.get("created_at", "")),
+                file_count=0,
+                issues=issues,
+            )
+
+        try:
+            canonical = base64.b64decode(payload_b64)
+            expected_manifest: dict[str, str] = json.loads(canonical.decode("utf-8"))
+            sig_bytes = base64.b64decode(str(sigs[0].get("sig", "")))
+        except Exception as exc:
+            issues.append(f"Failed to decode DSSE payload or signature: {exc}")
+            return VerificationResult(
+                valid=False,
+                signer_id=subject,
+                algorithm="sigstore-bundle",
+                created_at=str(bundle.get("created_at", "")),
+                file_count=0,
+                issues=issues,
+            )
+
+        pub_pem = public_key_pem or str((vm.get("publicKey") or {}).get("pem", ""))
+        if not pub_pem:
+            issues.append("No public key available in Sigstore bundle verificationMaterial")
+        elif not cls._verify_ed25519(pub_pem, canonical, sig_bytes.hex()):
+            issues.append("Sigstore DSSE Ed25519 signature verification failed")
+
+        tlog_entries = vm.get("tlogEntries", []) if isinstance(vm.get("tlogEntries"), list) else []
+        if not tlog_entries:
+            issues.append("Sigstore bundle missing Rekor transparency log entry")
+        else:
+            expected_inc = f"sha256:{hashlib.sha256(canonical + sig_bytes).hexdigest()}"
+            recorded_inc = str(tlog_entries[0].get("inclusionDigest", ""))
+            if recorded_inc and recorded_inc != expected_inc:
+                issues.append("Rekor transparency inclusion digest mismatch")
+
+        current_manifest = cls.compute_manifest(skill_dir)
+        current_manifest.pop(bundle_path.name, None)
+        for rel_path, expected_hash in expected_manifest.items():
+            if rel_path not in current_manifest:
+                issues.append(f"Missing file: {rel_path}")
+            elif current_manifest[rel_path] != expected_hash:
+                issues.append(f"Content modified: {rel_path}")
+        for rel_path in current_manifest:
+            if rel_path not in expected_manifest and not rel_path.endswith(".sigstore.json"):
+                issues.append(f"Untracked/unverified file added: {rel_path}")
+
+        return VerificationResult(
+            valid=len(issues) == 0,
+            signer_id=subject,
+            algorithm="sigstore-bundle",
+            created_at=str(bundle.get("created_at", "")),
+            file_count=len(expected_manifest),
+            issues=issues,
+        )

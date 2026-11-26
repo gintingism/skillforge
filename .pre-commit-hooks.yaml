@@ -1,0 +1,36 @@
+- id: skillforge-audit
+  name: SkillForge Security & Anti-Bypass Audit
+  description: Audit agent skills (SKILL.md) for prompt injections, AST taint, bytecode/archive bypasses, and supply-chain risks.
+  entry: skillforge audit .
+  language: python
+  pass_filenames: false
+  always_run: true
+
+- id: skillforge-audit-mcp
+  name: SkillForge MCP Configuration Audit
+  description: Audit mcp.json files for plaintext secrets, shell wrappers, tool poisoning, and rug-pull drift.
+  entry: skillforge audit-mcp
+  language: python
+  files: '(^|/)(\.?mcp\.json|claude_desktop_config\.json)$'
+
+- id: skillforge-lint-context
+  name: SkillForge Context File Linter
+  description: Lint AGENTS.md, CLAUDE.md, GEMINI.md, and .cursorrules for context-window bloat and conflicts.
+  entry: skillforge lint-context --strict
+  language: python
+  pass_filenames: false
+  files: '(^|/)(AGENTS\.md|CLAUDE\.md|GEMINI\.md|\.cursorrules|\.windsurfrules)$'
+
+- id: skillforge-sync-rules-check
+  name: SkillForge Context Rule Drift Check
+  description: Verify synchronized agent rule files have not drifted from AGENTS.md.
+  entry: skillforge sync-rules . --check
+  language: python
+  pass_filenames: false
+
+- id: skillforge-validate-strict
+  name: SkillForge Strict AAIF agentskills.io Validation
+  description: Validate SKILL.md files strictly against the 6-field AAIF agentskills.io specification.
+  entry: skillforge validate --strict-spec
+  language: python
+  files: 'SKILL\.md$'
