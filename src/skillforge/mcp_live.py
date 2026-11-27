@@ -390,4 +390,216 @@ def audit_mcp_server_card(card_path_or_data: Path | dict[str, Any], *, target_na
                 )
             )
 
+    findings.extend(audit_mcp_extensions_config(server_name, data, file_label=target_name))
+
     return AuditReport(target=target_name, findings=findings)
+
+
+_PRIVATE_OR_META_HOSTS = (
+    "169.254.169.254",
+    "metadata.google.internal",
+    "10.",
+    "192.168.",
+    "172.16.",
+    "172.17.",
+    "172.18.",
+    "172.19.",
+    "172.20.",
+    "172.21.",
+    "172.22.",
+    "172.23.",
+    "172.24.",
+    "172.25.",
+    "172.26.",
+    "172.27.",
+    "172.28.",
+    "172.29.",
+    "172.30.",
+    "172.31.",
+)
+
+
+def _is_unsafe_upload_url(upload_url: str, server_endpoint: str = "") -> tuple[str | None, Severity]:
+    """Check an MCP File Upload destination URL for non-TLS, SSRF, or cross-origin credential risks."""
+    parsed = urlparse(upload_url.strip())
+    scheme = (parsed.scheme or "").lower()
+    host = (parsed.hostname or "").lower()
+    if not scheme or not host:
+        return None, Severity.INFO
+    if host in ("169.254.169.254", "metadata.google.internal") or any(
+        host.startswith(prefix) for prefix in _PRIVATE_OR_META_HOSTS[2:]
+    ):
+        return f"Upload target '{upload_url}' points to a private or cloud metadata address (SSRF risk)", Severity.CRITICAL
+    if scheme in ("http", "ws") and host not in ("localhost", "127.0.0.1", "::1"):
+        return f"Upload target '{upload_url}' uses unencrypted HTTP on a remote host (require HTTPS)", Severity.HIGH
+    if server_endpoint:
+        srv_host = (urlparse(server_endpoint).hostname or "").lower()
+        if srv_host and host != srv_host and host not in ("localhost", "127.0.0.1", "::1"):
+            return (
+                f"Upload target host '{host}' differs from MCP server origin '{srv_host}'; "
+                "ensure MCP credentials are not forwarded across origins",
+                Severity.MEDIUM,
+            )
+    return None, Severity.INFO
+
+
+def audit_mcp_extensions_config(
+    server_name: str,
+    server_cfg: dict[str, Any],
+    *,
+    file_label: str = "mcp.json",
+) -> list[AuditFinding]:
+    """Audit MCP Tasks (MCP-012), MCP Events (MCP-013), and MCP File Uploads (MCP-014) config blocks."""
+    findings: list[AuditFinding] = []
+    caps = server_cfg.get("capabilities", {})
+    caps_map = caps if isinstance(caps, dict) else {}
+    ext_map = caps_map.get("extensions", {}) if isinstance(caps_map.get("extensions"), dict) else {}
+    server_endpoint = str(server_cfg.get("url", server_cfg.get("endpoint", ""))).strip()
+
+    # MCP-012: MCP Tasks (SEP-2663 / SEP-3570)
+    tasks_cfg = caps_map.get("tasks") or ext_map.get("io.modelcontextprotocol/tasks") or server_cfg.get("tasks")
+    if isinstance(tasks_cfg, dict):
+        if "list" in tasks_cfg and tasks_cfg.get("list") is not False:
+            findings.append(
+                AuditFinding(
+                    rule_id="MCP-012",
+                    severity=Severity.HIGH,
+                    message=(
+                        f"MCP server '{server_name}' exposes deprecated 'tasks/list' capability; "
+                        "removed in 2026-07-28 SEP-2663 due to cross-tenant task metadata leakage"
+                    ),
+                    file=file_label,
+                    snippet="capabilities.tasks.list",
+                )
+            )
+        ttl_present = "ttl" in tasks_cfg or "ttlMs" in tasks_cfg or "maxTtlMs" in tasks_cfg
+        ttl_val = tasks_cfg.get("maxTtlMs", tasks_cfg.get("ttlMs", tasks_cfg.get("ttl")))
+        if ttl_present and (ttl_val is None or (isinstance(ttl_val, (int, float)) and ttl_val <= 0)):
+            findings.append(
+                AuditFinding(
+                    rule_id="MCP-012",
+                    severity=Severity.HIGH,
+                    message=(
+                        f"MCP server '{server_name}' configures unlimited task TTL ({ttl_val!r}); "
+                        "cap maxTtlMs to prevent abandoned-task resource exhaustion and stale result retention"
+                    ),
+                    file=file_label,
+                    snippet=f"ttl={ttl_val!r}",
+                )
+            )
+        id_strategy = str(tasks_cfg.get("taskIdStrategy", tasks_cfg.get("idStrategy", ""))).lower()
+        if id_strategy in ("sequential", "increment", "timestamp", "hash"):
+            findings.append(
+                AuditFinding(
+                    rule_id="MCP-012",
+                    severity=Severity.CRITICAL,
+                    message=(
+                        f"MCP server '{server_name}' uses predictable taskIdStrategy '{id_strategy}'; "
+                        "task IDs act as bearer capabilities and require >=128-bit CSPRNG entropy"
+                    ),
+                    file=file_label,
+                    snippet=f"taskIdStrategy: {id_strategy}",
+                )
+            )
+
+    # MCP-013: MCP Events (SEP-3415, io.modelcontextprotocol/events)
+    events_cfg = caps_map.get("events") or ext_map.get("io.modelcontextprotocol/events") or server_cfg.get("events")
+    if isinstance(events_cfg, dict):
+        webhook_url = str(events_cfg.get("webhookUrl", events_cfg.get("endpoint", ""))).strip()
+        if webhook_url:
+            parsed_ev = urlparse(webhook_url)
+            ev_host = (parsed_ev.hostname or "").lower()
+            if (parsed_ev.scheme or "").lower() in ("http", "ws") and ev_host not in ("localhost", "127.0.0.1", "::1"):
+                findings.append(
+                    AuditFinding(
+                        rule_id="MCP-013",
+                        severity=Severity.HIGH,
+                        message=f"MCP Events server '{server_name}' uses unencrypted event endpoint '{webhook_url}'",
+                        file=file_label,
+                        snippet=webhook_url[:90],
+                    )
+                )
+        if events_cfg.get("requireAuth") is False or events_cfg.get("verifySignature") is False:
+            findings.append(
+                AuditFinding(
+                    rule_id="MCP-013",
+                    severity=Severity.HIGH,
+                    message=(
+                        f"MCP Events server '{server_name}' disables event authentication or signature verification "
+                        "(allows spoofed upstream events / indirect prompt injection)"
+                    ),
+                    file=file_label,
+                )
+            )
+
+    # MCP-014: MCP File Uploads (io.modelcontextprotocol/files, x-mcp-file)
+    files_cfg = ext_map.get("io.modelcontextprotocol/files") or server_cfg.get("files")
+    if isinstance(files_cfg, dict):
+        if files_cfg.get("forwardCredentials") is True:
+            findings.append(
+                AuditFinding(
+                    rule_id="MCP-014",
+                    severity=Severity.CRITICAL,
+                    message=(
+                        f"MCP File Uploads on '{server_name}' sets forwardCredentials=true; "
+                        "never forward MCP Authorization credentials to external upload destinations"
+                    ),
+                    file=file_label,
+                    snippet="forwardCredentials: true",
+                )
+            )
+        upload_url = str(files_cfg.get("uploadUrl", "")).strip()
+        if upload_url:
+            reason, sev = _is_unsafe_upload_url(upload_url, server_endpoint)
+            if reason:
+                findings.append(
+                    AuditFinding(
+                        rule_id="MCP-014",
+                        severity=sev,
+                        message=f"MCP File Upload on '{server_name}': {reason}",
+                        file=file_label,
+                        snippet=upload_url[:90],
+                    )
+                )
+
+    for tool in server_cfg.get("tools", []) if isinstance(server_cfg.get("tools"), list) else []:
+        if not isinstance(tool, dict):
+            continue
+        t_name = str(tool.get("name", "unnamed"))
+        schema = tool.get("inputSchema", {})
+        if not isinstance(schema, dict):
+            continue
+        props = schema.get("properties", {})
+        if not isinstance(props, dict):
+            continue
+        for prop_name, prop_def in props.items():
+            if not isinstance(prop_def, dict):
+                continue
+            x_file = prop_def.get("x-mcp-file")
+            if isinstance(x_file, dict):
+                if x_file.get("forwardCredentials") is True:
+                    findings.append(
+                        AuditFinding(
+                            rule_id="MCP-014",
+                            severity=Severity.CRITICAL,
+                            message=(
+                                f"Tool '{t_name}' parameter '{prop_name}' enables x-mcp-file forwardCredentials=true"
+                            ),
+                            file=f"{file_label}::{t_name}",
+                        )
+                    )
+                u_url = str(x_file.get("uploadUrl", "")).strip()
+                if u_url:
+                    reason, sev = _is_unsafe_upload_url(u_url, server_endpoint)
+                    if reason:
+                        findings.append(
+                            AuditFinding(
+                                rule_id="MCP-014",
+                                severity=sev,
+                                message=f"Tool '{t_name}' x-mcp-file parameter '{prop_name}': {reason}",
+                                file=f"{file_label}::{t_name}",
+                                snippet=u_url[:90],
+                            )
+                        )
+
+    return findings

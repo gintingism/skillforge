@@ -1,7 +1,7 @@
 {
   "name": "skillforge_mcp",
   "display_name": "SkillForge MCP",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "description": "Discover, read, and validate portable SkillForge skills.",
   "command": "skillforge",
   "args": ["serve-mcp"]

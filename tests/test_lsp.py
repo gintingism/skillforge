@@ -105,4 +105,5 @@ def test_hover_and_completion() -> None:
     labels = [it["label"] for it in comp_resp["result"]["items"]]
     assert "name" in labels
     assert "description" in labels
-    assert "tags" in labels
+    assert "metadata" in labels
+    assert "allowed-tools" in labels

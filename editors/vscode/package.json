@@ -1,0 +1,49 @@
+{
+  "name": "skillforge-vscode",
+  "displayName": "SkillForge: Agent Skills Security & Token Profiler",
+  "description": "Real-time SKILL.md security diagnostics, token budget CodeLens, and one-click AAIF 6-field normalize quick fixes powered by skillforge lsp.",
+  "version": "0.11.0",
+  "publisher": "gintingism",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gintingism/skillforge"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Linters",
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:markdown",
+    "workspaceContains:**/SKILL.md"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "skillforge.audit",
+        "title": "SkillForge: Audit Active SKILL.md"
+      },
+      {
+        "command": "skillforge.normalize",
+        "title": "SkillForge: Normalize Active SKILL.md to AAIF 6-Field Spec"
+      }
+    ],
+    "configuration": {
+      "title": "SkillForge",
+      "properties": {
+        "skillforge.executablePath": {
+          "type": "string",
+          "default": "skillforge",
+          "description": "Path to the skillforge CLI executable."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

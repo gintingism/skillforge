@@ -65,6 +65,9 @@ OWASP_ASI_MAP: dict[str, str] = {
     "MCP-009": "ASI03:Identity-and-Privilege-Abuse",
     "MCP-010": "ASI03:Identity-and-Privilege-Abuse",
     "MCP-011": "ASI05:Unexpected-Code-Execution",
+    "MCP-012": "ASI03:Identity-and-Privilege-Abuse",
+    "MCP-013": "ASI01:Agent-Goal-Hijacking",
+    "MCP-014": "ASI02:Tool-Misuse-and-Exploitation",
     "HOOK-001": "ASI05:Unexpected-Code-Execution",
     "HOOK-002": "ASI03:Identity-and-Privilege-Abuse",
     "HOOK-003": "ASI05:Unexpected-Code-Execution",
@@ -204,6 +207,9 @@ class AuditReport:
             "MCP-009": ("Insecure Remote MCP Transport", "Detects unencrypted non-localhost http:// or ws:// remote MCP server URLs violating MCP 2026-07-28 transport rules."),
             "MCP-010": ("Hardcoded Bearer Token or Deprecated DCR in MCP Auth", "Detects static Authorization Bearer tokens in MCP headers or deprecated Dynamic Client Registration usage."),
             "MCP-011": ("Unsafe MCP Apps UI Resource", "Detects unsafe CSP, wildcard postMessage, or inline script/credential phishing inside MCP Apps ui:// iframe resources."),
+            "MCP-012": ("Insecure MCP Tasks Configuration", "Detects deprecated tasks/list exposure (cross-tenant leak), unlimited task TTL, or weak task ID entropy (SEP-2663/3570)."),
+            "MCP-013": ("Insecure MCP Events Subscription", "Detects unencrypted HTTP event/webhook subscriptions or unauthenticated event triggers (SEP-3415)."),
+            "MCP-014": ("Insecure MCP File Upload Target", "Detects non-TLS, private/metadata SSRF, or cross-origin credential forwarding in x-mcp-file upload configs."),
             "HOOK-001": ("Malicious Shell Command in Agent Hook", "Detects dangerous shell pipelines, reverse shells, or credential access inside agent lifecycle hooks."),
             "HOOK-002": ("Insecure HTTP Agent Hook", "Detects unencrypted non-localhost HTTP hook endpoints or hardcoded Bearer tokens in agent hook configs."),
             "HOOK-003": ("Unsafe Function/Mod Hook Code", "Detects child_process execution, eval, or environment exfiltration in TypeScript/JavaScript function hooks."),
@@ -2135,6 +2141,11 @@ def audit_mcp_config(path: Path, *, lock_path: Path | None = None) -> AuditRepor
                     )
                 )
                 break
+
+        # MCP-012..014: Audit MCP Tasks (SEP-2663/3570), Events (SEP-3415), and File Uploads (x-mcp-file)
+        from .mcp_live import audit_mcp_extensions_config
+
+        findings.extend(audit_mcp_extensions_config(s_name, s_cfg, file_label=s_file))
 
     # MCP-006: Duplicate tool names across different MCP servers
     for tool_name, owners in sorted(tool_registry.items()):

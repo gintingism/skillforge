@@ -130,6 +130,14 @@ def server_capabilities_metadata(*, directory_read: bool = True) -> dict[str, An
     }
 
 
+def _compute_etag(payload: Any) -> str:
+    """Compute deterministic weak ETag for SEP-2549 MCP response caching."""
+    import json as _json
+
+    raw = _json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return f'W/"{hashlib.sha256(raw).hexdigest()[:16]}"'
+
+
 def skills_list(
     registry: Registry,
     *,
@@ -138,7 +146,7 @@ def skills_list(
     ttl_ms: int = DEFAULT_TTL_MS,
     cache_scope: str = DEFAULT_CACHE_SCOPE,
 ) -> dict[str, Any]:
-    """Execute SEP-2640 skills/list with pagination and cache directives."""
+    """Execute SEP-2640 skills/list with pagination, ETag, and cache directives."""
     all_skills = sorted(registry.search(""), key=lambda s: s.name)
     start_idx = 0
     if cursor is not None:
@@ -158,6 +166,7 @@ def skills_list(
         "skills": entries,
         "ttlMs": ttl_ms,
         "cacheScope": cache_scope,
+        "etag": _compute_etag(entries),
     }
     next_idx = start_idx + len(page)
     if next_idx < len(all_skills):
@@ -199,11 +208,13 @@ def skills_get(
     except SkillForgeError as exc:
         raise MCPSkillsProtocolError(f"Unknown skill URI: {uri}", code=-32602) from exc
 
+    entry = build_skill_entry(pkg)
     return {
         "resultType": "complete",
-        "skill": build_skill_entry(pkg),
+        "skill": entry,
         "ttlMs": ttl_ms,
         "cacheScope": cache_scope,
+        "etag": _compute_etag(entry),
     }
 
 
@@ -279,6 +290,7 @@ def resources_directory_read(
         "resources": children,
         "ttlMs": ttl_ms,
         "cacheScope": cache_scope,
+        "etag": _compute_etag(children),
     }
 
 

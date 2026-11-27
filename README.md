@@ -623,10 +623,16 @@ skillforge audit-plugin ./my-plugin
 skillforge pack-bundle init ./skillforge-pack.yaml && skillforge pack-bundle install ./skillforge-pack.yaml
 skillforge audit-a2a ./agent-card.json --sign-key a2a.pem --key-file a2a.pem.pub
 
-# Generate/verify SEP-2640 manifests and Sigstore Bundle v0.3 OIDC attestations
+# Generate/verify SEP-2640 manifests and Sigstore Bundle v0.3 OIDC attestations (offline or live Fulcio/Rekor)
 skillforge mcp-manifest ./skills/my-skill -o manifest.json
 skillforge sign ./skills/my-skill --sigstore --oidc-issuer https://token.actions.githubusercontent.com
+skillforge sign ./skills/my-skill --sigstore --online
 skillforge provenance ./skills/my-skill --sigstore
+
+# Manage a federated organization subregistry and run scripts in Docker or AAIF OpenSandbox
+skillforge org-registry init ./registry-policy.yaml --org acme --namespace com.acme
+skillforge org-registry approve ./registry-policy.yaml --id com.acme/example-skill --path ./skills/example-skill
+skillforge run-sandboxed ./skills/my-skill/scripts/helper.py --backend docker
 ```
 
 ---

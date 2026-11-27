@@ -234,7 +234,26 @@ class MCPFirewall:
                     )
                 )
 
-        self._scan_value(params, "params", violations)
+        # FW-008: Inspect incoming MCP Event notifications (SEP-3415) for indirect prompt injection
+        if method in ("notifications/events", "notifications/tasks", "subscriptions/listen") and isinstance(params, dict):
+            ev_violations: list[FirewallViolation] = []
+            self._scan_value(params, "params", ev_violations)
+            for v in ev_violations:
+                violations.append(
+                    FirewallViolation(
+                        rule_id="FW-008" if v.rule_id == "FW-001" else v.rule_id,
+                        severity=v.severity,
+                        message=f"MCP Event payload violation ({method}): {v.message}",
+                        field_path=v.field_path,
+                    )
+                )
+        else:
+            self._scan_value(params, "params", violations)
+
+        # FW-009: Inspect x-mcp-file / uploadUrl arguments for non-TLS, SSRF, or cross-origin credential forwarding
+        if isinstance(params, dict):
+            self._scan_file_upload_params(params, "params", violations)
+
         action = "BLOCK" if violations else "ALLOW"
         decision = FirewallDecision(
             action=action,
@@ -247,6 +266,45 @@ class MCPFirewall:
         self._log_decision(decision)
         return decision
 
+    def _scan_file_upload_params(self, val: Any, path: str, violations: list[FirewallViolation]) -> None:
+        if isinstance(val, dict):
+            if val.get("forwardCredentials") is True:
+                violations.append(
+                    FirewallViolation(
+                        rule_id="FW-009",
+                        severity="CRITICAL",
+                        message="MCP File Upload attempts cross-origin credential forwarding (forwardCredentials=true)",
+                        field_path=f"{path}.forwardCredentials",
+                    )
+                )
+            for key in ("uploadUrl", "downloadUrl"):
+                raw_url = val.get(key)
+                if isinstance(raw_url, str) and raw_url.strip():
+                    low = raw_url.strip().lower()
+                    if _SSRF_TARGETS.search(low) or low.startswith(("http://10.", "http://192.168.", "http://172.16.")):
+                        violations.append(
+                            FirewallViolation(
+                                rule_id="FW-009",
+                                severity="CRITICAL",
+                                message=f"MCP File Upload {key} targets private or cloud metadata endpoint (SSRF)",
+                                field_path=f"{path}.{key}",
+                            )
+                        )
+                    elif low.startswith("http://") and not low.startswith(("http://localhost", "http://127.0.0.1")):
+                        violations.append(
+                            FirewallViolation(
+                                rule_id="FW-009",
+                                severity="HIGH",
+                                message=f"MCP File Upload {key} uses unencrypted HTTP on a remote host",
+                                field_path=f"{path}.{key}",
+                            )
+                        )
+            for k, v in val.items():
+                self._scan_file_upload_params(v, f"{path}.{k}", violations)
+        elif isinstance(val, list):
+            for idx, item in enumerate(val):
+                self._scan_file_upload_params(item, f"{path}[{idx}]", violations)
+
     def inspect_response(self, message: dict[str, Any]) -> tuple[FirewallDecision, dict[str, Any]]:
         """Inspect and optionally redact a server-to-client JSON-RPC response."""
         msg_id = message.get("id")
@@ -255,9 +313,39 @@ class MCPFirewall:
 
         sanitized_msg = dict(message)
         if result is not None:
+            # FW-007: Inspect MCP Tasks statusMessage and inputRequests elicitation payloads (SEP-2663/3570)
+            if isinstance(result, dict):
+                task_objs: list[tuple[str, dict[str, Any]]] = [("result", result)]
+                if isinstance(result.get("task"), dict):
+                    task_objs.append(("result.task", result["task"]))
+                for prefix, tobj in task_objs:
+                    status_msg = tobj.get("statusMessage")
+                    if isinstance(status_msg, str) and (_INVISIBLE_UNICODE.search(status_msg) or _PROMPT_INJECTION.search(status_msg)):
+                        violations.append(
+                            FirewallViolation(
+                                rule_id="FW-007",
+                                severity="CRITICAL",
+                                message="Indirect prompt injection detected in MCP Task statusMessage",
+                                field_path=f"{prefix}.statusMessage",
+                            )
+                        )
+                    input_reqs = tobj.get("inputRequests")
+                    if isinstance(input_reqs, (dict, list)):
+                        raw_reqs = json.dumps(input_reqs)
+                        if re.search(r"(?i)\b(?:password|api[_-]?key|secret|private[_-]?key|bearer\s+token)\b", raw_reqs):
+                            violations.append(
+                                FirewallViolation(
+                                    rule_id="FW-007",
+                                    severity="CRITICAL",
+                                    message="MCP Task inputRequests elicitation attempts to harvest user credentials/secrets",
+                                    field_path=f"{prefix}.inputRequests",
+                                )
+                            )
+                self._scan_file_upload_params(result, "result", violations)
+
             sanitized_msg["result"] = self._redact_value(result, "result", violations)
 
-        has_critical = any(v.rule_id == "FW-001" for v in violations)
+        has_critical = any(v.rule_id in ("FW-001", "FW-007", "FW-008", "FW-009") for v in violations)
         if has_critical:
             action = "BLOCK"
         elif violations:
@@ -469,7 +557,21 @@ class MCPFirewall:
             )
             decision.action = "BLOCK"
 
-        if hdr_name and self.allowed_tools is not None and hdr_name not in self.allowed_tools:
+        task_methods = ("tasks/get", "tasks/update", "tasks/cancel")
+        if body_method in task_methods:
+            params_obj = payload.get("params")
+            body_task_id = str(params_obj.get("taskId", "")) if isinstance(params_obj, dict) else ""
+            if hdr_name and body_task_id and hdr_name != body_task_id:
+                decision.violations.append(
+                    FirewallViolation(
+                        rule_id="FW-007",
+                        severity="HIGH",
+                        message=f"Mcp-Name task routing header '{hdr_name}' mismatches params.taskId '{body_task_id}'",
+                        field_path="headers.Mcp-Name",
+                    )
+                )
+                decision.action = "BLOCK"
+        elif hdr_name and self.allowed_tools is not None and hdr_name not in self.allowed_tools:
             if not any(v.rule_id == "FW-006" and v.field_path == "params.name" for v in decision.violations):
                 decision.violations.append(
                     FirewallViolation(
