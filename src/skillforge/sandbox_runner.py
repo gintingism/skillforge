@@ -176,15 +176,89 @@ def _wrap_with_bwrap(cmd: list[str], work_dir: Path, guard_dir: Path | None) -> 
     return bwrap_cmd
 
 
+def _wrap_with_docker(
+    staged_script: Path,
+    args: list[str],
+    work_dir: Path,
+    *,
+    image: str | None = None,
+) -> list[str]:
+    """Build hardened zero-network Docker container command for cross-platform script isolation."""
+    suffix = staged_script.suffix.lower()
+    if suffix in (".js", ".mjs"):
+        resolved_image = image or "node:22-alpine"
+        inner_cmd = ["node", f"/workspace/{staged_script.name}", *args]
+    elif suffix in (".sh", ".bash"):
+        resolved_image = image or "alpine:3.20"
+        inner_cmd = ["sh", f"/workspace/{staged_script.name}", *args]
+    else:
+        resolved_image = image or "python:3.12-slim"
+        inner_cmd = ["python3", f"/workspace/{staged_script.name}", *args]
+    return [
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--read-only",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges:true",
+        "--pids-limit",
+        "64",
+        "--memory",
+        "256m",
+        "-v",
+        f"{work_dir}:/workspace:ro",
+        "-w",
+        "/workspace",
+        resolved_image,
+        *inner_cmd,
+    ]
+
+
+def _wrap_with_opensandbox(
+    staged_script: Path,
+    args: list[str],
+    work_dir: Path,
+    *,
+    timeout_sec: float = 5.0,
+) -> list[str]:
+    """Build AAIF OpenSandbox CLI invocation command for isolated agent workload execution."""
+    return [
+        "opensandbox",
+        "run",
+        "--network=none",
+        "--readonly-rootfs",
+        f"--timeout={int(max(1, round(timeout_sec)))}s",
+        "--workdir",
+        str(work_dir),
+        "--",
+        str(staged_script),
+        *args,
+    ]
+
+
 def run_in_sandbox(
     script_path: Path,
     script_args: list[str] | None = None,
     timeout_sec: float = 5.0,
     use_os_jail: bool = True,
+    backend: str = "auto",
 ) -> SandboxExecutionResult:
-    """Execute a bundled script inside an ephemeral capability-jailed sandbox."""
+    """Execute a bundled script inside an ephemeral capability-jailed sandbox.
+
+    Supported backends: 'auto', 'local', 'bwrap', 'docker', 'opensandbox'.
+    """
     if not script_path.is_file():
         raise SkillForgeError(f"Script not found: {script_path}")
+
+    norm_backend = backend.strip().lower()
+    if norm_backend not in ("auto", "local", "bwrap", "docker", "opensandbox"):
+        raise SkillForgeError(
+            f"Unsupported sandbox backend '{backend}'. Choose from: auto, local, bwrap, docker, opensandbox"
+        )
 
     args = script_args or []
     start_ns = time.perf_counter_ns()
@@ -215,10 +289,25 @@ def run_in_sandbox(
             if sys_key in os.environ:
                 safe_env[sys_key] = os.environ[sys_key]
 
-        cmd, backend = _resolve_runtime_command(staged_script, args)
-        if use_os_jail and shutil.which("bwrap"):
-            cmd = _wrap_with_bwrap(cmd, work_dir, guard_dir if backend == "python-capability-jail" else None)
-            backend = "bwrap"
+        cmd, resolved_backend = _resolve_runtime_command(staged_script, args)
+        if norm_backend == "docker":
+            if not shutil.which("docker"):
+                raise SkillForgeError("Docker CLI ('docker') not found for --backend docker.")
+            cmd = _wrap_with_docker(staged_script, args, work_dir)
+            resolved_backend = "docker"
+        elif norm_backend == "opensandbox":
+            if not shutil.which("opensandbox"):
+                raise SkillForgeError("AAIF OpenSandbox CLI ('opensandbox') not found for --backend opensandbox.")
+            cmd = _wrap_with_opensandbox(staged_script, args, work_dir, timeout_sec=timeout_sec)
+            resolved_backend = "opensandbox"
+        elif norm_backend == "bwrap":
+            if not shutil.which("bwrap"):
+                raise SkillForgeError("Linux bubblewrap ('bwrap') not found for --backend bwrap.")
+            cmd = _wrap_with_bwrap(cmd, work_dir, guard_dir if resolved_backend == "python-capability-jail" else None)
+            resolved_backend = "bwrap"
+        elif norm_backend == "auto" and use_os_jail and shutil.which("bwrap"):
+            cmd = _wrap_with_bwrap(cmd, work_dir, guard_dir if resolved_backend == "python-capability-jail" else None)
+            resolved_backend = "bwrap"
 
         timed_out = False
         try:
@@ -254,5 +343,5 @@ def run_in_sandbox(
         stderr=stderr,
         blocked_events=blocked_events,
         duration_ms=duration_ms,
-        backend=backend,
+        backend=resolved_backend,
     )

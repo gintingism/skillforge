@@ -294,13 +294,15 @@ class SkillLanguageServer:
                     "capabilities": {
                         "textDocumentSync": 1,  # Full sync
                         "hoverProvider": True,
+                        "codeLensProvider": {"resolveProvider": False},
+                        "codeActionProvider": True,
                         "completionProvider": {
                             "triggerCharacters": [":", " ", "\n", "-"],
                         },
                     },
                     "serverInfo": {
                         "name": "skillforge-lsp",
-                        "version": "0.7.0",
+                        "version": "0.11.0",
                     },
                 },
             }
@@ -383,14 +385,86 @@ class SkillLanguageServer:
                 },
             }
 
+        if method == "textDocument/codeLens":
+            doc = params.get("textDocument", {})
+            uri = doc.get("uri", "")
+            text = self.documents.get(uri, "")
+            lenses: list[dict[str, Any]] = []
+            if text.startswith("---"):
+                fpath = self.uri_to_path(uri)
+                diags = self.diagnose_text(text, fpath)
+                err_count = sum(1 for d in diags if d["severity"] == DiagnosticSeverity.ERROR)
+                warn_count = sum(1 for d in diags if d["severity"] == DiagnosticSeverity.WARNING)
+                score = max(0, 100 - (err_count * 20 + warn_count * 5))
+                body_tokens = len(text) // 4
+                pointer_tokens = 0
+                try:
+                    from skillforge.skill import parse_skill
+
+                    parsed_sk = parse_skill(text)
+                    pointer_tokens = parsed_sk.pointer_tokens
+                    body_tokens = parsed_sk.body_tokens
+                except Exception:
+                    pass
+                lenses.append(
+                    {
+                        "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 3}},
+                        "command": {
+                            "title": f"SkillForge: Score {score}/100 | Pointer ~{pointer_tokens} tok | Body ~{body_tokens} tok",
+                            "command": "skillforge.audit",
+                            "arguments": [uri],
+                        },
+                    }
+                )
+            return {"jsonrpc": "2.0", "id": msg_id, "result": lenses}
+
+        if method == "textDocument/codeAction":
+            doc = params.get("textDocument", {})
+            uri = doc.get("uri", "")
+            text = self.documents.get(uri, "")
+            actions: list[dict[str, Any]] = []
+            if text.startswith("---"):
+                try:
+                    from skillforge.skill import parse_skill
+
+                    skill = parse_skill(text)
+                    normalized, changes = skill.normalize_portable(fix_name=True)
+                    if changes:
+                        new_text = normalized.render()
+                        lines = text.splitlines()
+                        end_line = len(lines)
+                        end_char = len(lines[-1]) if lines else 0
+                        actions.append(
+                            {
+                                "title": f"SkillForge: Normalize to AAIF 6-field spec ({len(changes)} change(s))",
+                                "kind": "quickfix",
+                                "edit": {
+                                    "changes": {
+                                        uri: [
+                                            {
+                                                "range": {
+                                                    "start": {"line": 0, "character": 0},
+                                                    "end": {"line": end_line, "character": end_char},
+                                                },
+                                                "newText": new_text,
+                                            }
+                                        ]
+                                    }
+                                },
+                            }
+                        )
+                except Exception:
+                    pass
+            return {"jsonrpc": "2.0", "id": msg_id, "result": actions}
+
         if method == "textDocument/completion":
             items = [
                 {"label": "name", "kind": 10, "detail": "Unique kebab-case name", "insertText": "name: "},
                 {"label": "description", "kind": 10, "detail": "Single-sentence role description", "insertText": "description: "},
-                {"label": "version", "kind": 10, "detail": "SemVer version (e.g. 1.0.0)", "insertText": "version: 1.0.0\n"},
-                {"label": "author", "kind": 10, "detail": "Author or organization", "insertText": "author: "},
-                {"label": "tags", "kind": 10, "detail": "Discovery tags", "insertText": "tags:\n  - "},
-                {"label": "allowed-tools", "kind": 10, "detail": "List of permitted tools", "insertText": "allowed-tools:\n  - "},
+                {"label": "license", "kind": 10, "detail": "SPDX license identifier", "insertText": "license: MIT\n"},
+                {"label": "compatibility", "kind": 10, "detail": "Environment compatibility note (<=500 chars)", "insertText": "compatibility: "},
+                {"label": "metadata", "kind": 10, "detail": "String key-value metadata map", "insertText": "metadata:\n  version: \"1.0.0\"\n"},
+                {"label": "allowed-tools", "kind": 10, "detail": "Permitted tools (experimental)", "insertText": "allowed-tools: "},
             ]
             return {"jsonrpc": "2.0", "id": msg_id, "result": {"isIncomplete": False, "items": items}}
 

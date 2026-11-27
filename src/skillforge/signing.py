@@ -568,3 +568,120 @@ class SkillSigner:
             file_count=len(expected_manifest),
             issues=issues,
         )
+
+    @classmethod
+    def sign_sigstore_online(
+        cls,
+        skill_dir: Path,
+        *,
+        identity_token: str | None = None,
+        staging: bool = False,
+        signer_factory: Any = None,
+    ) -> dict[str, Any]:
+        """Sign a skill manifest online via live Sigstore Fulcio CA + Rekor v2 transparency log.
+
+        Requires optional dependency: `pip install "agent-skillforge[sigstore]"`.
+        """
+        manifest = cls.compute_manifest(skill_dir)
+        canonical = cls._canonical_bytes(manifest)
+
+        if signer_factory is not None:
+            bundle_obj = signer_factory(canonical, identity_token, staging)
+            if isinstance(bundle_obj, dict):
+                return bundle_obj
+            return dict(json.loads(bundle_obj.to_json()))
+
+        try:
+            from sigstore.oidc import detect_credential  # type: ignore[import-not-found]
+            from sigstore.sign import SigningContext  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise SigningError(
+                "Live Sigstore Fulcio/Rekor signing requires the optional 'sigstore' package (>=4.5.0). "
+                "Install with: pip install 'agent-skillforge[sigstore]'"
+            ) from exc
+
+        token = identity_token or detect_credential()
+        if not token:
+            raise SigningError(
+                "No ambient OIDC credential found. Provide --identity-token or run inside GitHub Actions with id-token: write."
+            )
+        ctx = SigningContext.staging() if staging else SigningContext.production()
+        with ctx.signer(token) as signer:
+            bundle = signer.sign_artifact(canonical)
+        parsed = json.loads(bundle.to_json())
+        if isinstance(parsed, dict):
+            parsed["skillforgeManifest"] = manifest
+            return parsed
+        raise SigningError("Unexpected Sigstore bundle serialization output.")
+
+    @classmethod
+    def verify_sigstore_online(
+        cls,
+        skill_dir: Path,
+        bundle_path: Path,
+        *,
+        expected_issuer: str,
+        expected_identity: str,
+        staging: bool = False,
+        verifier_factory: Any = None,
+    ) -> VerificationResult:
+        """Verify a live Sigstore Bundle v0.3 against Fulcio trust root, Rekor v2 log, and disk files."""
+        if not bundle_path.is_file():
+            return VerificationResult(
+                valid=False,
+                signer_id="unknown",
+                algorithm="sigstore-online",
+                created_at="",
+                file_count=0,
+                issues=[f"Sigstore bundle not found: {bundle_path.name}"],
+            )
+        try:
+            raw_text = bundle_path.read_text(encoding="utf-8")
+            bundle_dict = json.loads(raw_text)
+        except (OSError, json.JSONDecodeError) as exc:
+            return VerificationResult(
+                valid=False,
+                signer_id="unknown",
+                algorithm="sigstore-online",
+                created_at="",
+                file_count=0,
+                issues=[f"Invalid Sigstore bundle JSON: {exc}"],
+            )
+
+        current_manifest = cls.compute_manifest(skill_dir)
+        current_manifest.pop(bundle_path.name, None)
+        canonical = cls._canonical_bytes(current_manifest)
+        issues: list[str] = []
+
+        if verifier_factory is not None:
+            ok, err_msg = verifier_factory(canonical, bundle_dict, expected_issuer, expected_identity, staging)
+            if not ok:
+                issues.append(str(err_msg or "Online Sigstore verification failed"))
+        else:
+            try:
+                from sigstore.models import Bundle  # type: ignore[import-not-found]
+                from sigstore.verify import Verifier  # type: ignore[import-not-found]
+                from sigstore.verify.policy import Identity  # type: ignore[import-not-found]
+            except ImportError as exc:
+                raise SigningError(
+                    "Live Sigstore Fulcio/Rekor verification requires 'sigstore>=4.5.0'. "
+                    "Install with: pip install 'agent-skillforge[sigstore]'"
+                ) from exc
+
+            try:
+                bundle_clean = {k: v for k, v in bundle_dict.items() if k != "skillforgeManifest"}
+                bundle_model = Bundle.from_json(json.dumps(bundle_clean))
+                verifier = Verifier.staging() if staging else Verifier.production()
+                policy = Identity(identity=expected_identity, issuer=expected_issuer)
+                verifier.verify_artifact(canonical, bundle_model, policy)
+            except Exception as exc:
+                issues.append(f"Live Sigstore verification failed: {exc}")
+
+        return VerificationResult(
+            valid=len(issues) == 0,
+            signer_id=expected_identity,
+            algorithm="sigstore-online",
+            created_at=str(bundle_dict.get("created_at", "")),
+            file_count=len(current_manifest),
+            issues=issues,
+        )

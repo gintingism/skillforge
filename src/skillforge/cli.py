@@ -1234,6 +1234,9 @@ def sign_artifact(
     signer: str = typer.Option("local-maintainer", "--signer", help="Signer identity tag."),
     algorithm: str = typer.Option("hmac-sha256", "--algorithm", "-a", help="Signing algorithm: hmac-sha256, ed25519, or sigstore-bundle."),
     sigstore: bool = typer.Option(False, "--sigstore", help="Sign using Sigstore Bundle v0.3 keyless OIDC + Rekor format."),
+    online: bool = typer.Option(False, "--online", help="Use live Sigstore Fulcio CA + Rekor v2 transparency log (requires agent-skillforge[sigstore])."),
+    staging: bool = typer.Option(False, "--staging", help="Use Sigstore staging Fulcio/Rekor endpoints when --online is set."),
+    identity_token: str | None = typer.Option(None, "--identity-token", help="Explicit OIDC identity token for live Sigstore signing."),
     oidc_issuer: str = typer.Option("https://token.actions.githubusercontent.com", "--oidc-issuer", help="OIDC issuer claim for Sigstore bundles."),
     oidc_identity: str | None = typer.Option(None, "--oidc-identity", help="OIDC identity subject claim for Sigstore bundles."),
 ) -> None:
@@ -1251,15 +1254,24 @@ def sign_artifact(
     if effective_alg == "sigstore-bundle":
         skill_dir = path if path.is_dir() else path.parent
         try:
-            bundle, _ = SkillSigner.sign_sigstore_bundle(
-                skill_dir,
-                oidc_issuer=oidc_issuer,
-                oidc_identity=oidc_identity or signer,
-                private_key_pem=secret,
-            )
+            if online:
+                bundle = SkillSigner.sign_sigstore_online(
+                    skill_dir,
+                    identity_token=identity_token,
+                    staging=staging,
+                )
+                mode_label = "sigstore-online"
+            else:
+                bundle, _ = SkillSigner.sign_sigstore_bundle(
+                    skill_dir,
+                    oidc_issuer=oidc_issuer,
+                    oidc_identity=oidc_identity or signer,
+                    private_key_pem=secret,
+                )
+                mode_label = "sigstore-bundle"
             bundle_path = skill_dir / "SKILL.sigstore.json"
             bundle_path.write_text(json.dumps(bundle, indent=2) + "\n", encoding="utf-8")
-            typer.echo(f"Signed skill package (sigstore-bundle): {bundle_path}")
+            typer.echo(f"Signed skill package ({mode_label}): {bundle_path}")
         except SigningError as exc:
             typer.echo(f"Signing failed: {exc}", err=True)
             raise typer.Exit(code=1) from exc
@@ -1292,12 +1304,14 @@ def verify_sig(
     key: str | None = typer.Option(None, "--key", "-k", help="Optional secret key to verify HMAC."),
     key_file: Path | None = typer.Option(None, "--key-file", help="File containing secret key."),
     sigstore_bundle: Path | None = typer.Option(None, "--sigstore-bundle", help="Verify a Sigstore Bundle v0.3 JSON file."),
+    online: bool = typer.Option(False, "--online", help="Verify Sigstore bundle online against Fulcio trust root & Rekor v2."),
+    staging: bool = typer.Option(False, "--staging", help="Use Sigstore staging trust root when --online is set."),
     oidc_issuer: str | None = typer.Option(None, "--oidc-issuer", help="Expected OIDC issuer for Sigstore verification."),
     oidc_identity: str | None = typer.Option(None, "--oidc-identity", help="Expected OIDC identity subject for Sigstore verification."),
 ) -> None:
     """Verify signature manifest integrity and cryptographic authenticity."""
     import os
-    from skillforge.signing import SkillSigner
+    from skillforge.signing import SkillSigner, SigningError
 
     secret = key or (
         key_file.read_text(encoding="utf-8").strip()
@@ -1307,13 +1321,29 @@ def verify_sig(
 
     if sigstore_bundle is not None:
         skill_dir = path if path.is_dir() else path.parent
-        res = SkillSigner.verify_sigstore_bundle(
-            skill_dir,
-            sigstore_bundle,
-            expected_issuer=oidc_issuer,
-            expected_identity=oidc_identity,
-            public_key_pem=secret,
-        )
+        if online:
+            if not oidc_issuer or not oidc_identity:
+                typer.echo("Error: --online Sigstore verification requires both --oidc-issuer and --oidc-identity.", err=True)
+                raise typer.Exit(code=1)
+            try:
+                res = SkillSigner.verify_sigstore_online(
+                    skill_dir,
+                    sigstore_bundle,
+                    expected_issuer=oidc_issuer,
+                    expected_identity=oidc_identity,
+                    staging=staging,
+                )
+            except SigningError as exc:
+                typer.echo(f"Verification failed: {exc}", err=True)
+                raise typer.Exit(code=1) from exc
+        else:
+            res = SkillSigner.verify_sigstore_bundle(
+                skill_dir,
+                sigstore_bundle,
+                expected_issuer=oidc_issuer,
+                expected_identity=oidc_identity,
+                public_key_pem=secret,
+            )
     elif path.is_file() and path.name.endswith(".lock"):
         res = SkillSigner.verify_lockfile(path, key=secret)
     elif path.is_dir() or path.name == "SKILL.md":
@@ -1506,16 +1536,20 @@ def refactor_progressive_command(
 
 @app.command("run-sandboxed")
 def run_sandboxed_command(
-    script: Path = typer.Argument(..., help="Path to Python script to execute inside the capability jail."),
+    script: Path = typer.Argument(..., help="Path to Python, shell, or Node.js script to execute inside the capability jail."),
     timeout: float = typer.Option(5.0, "--timeout", "-t", help="Execution timeout in seconds."),
+    backend: str = typer.Option("auto", "--backend", "-b", help="Sandbox backend: auto, local, bwrap, docker, or opensandbox."),
     json_output: bool = typer.Option(False, "--json", help="Emit execution report as JSON."),
     args: list[str] | None = typer.Argument(None, help="Arguments passed to the script."),
 ) -> None:
-    """Execute a bundled Python script inside an isolated zero-trust capability jail."""
+    """Execute a bundled script inside an isolated zero-trust capability jail."""
     from skillforge.sandbox_runner import run_in_sandbox
 
     try:
-        res = run_in_sandbox(script, script_args=args, timeout_sec=timeout)
+        if backend != "auto":
+            res = run_in_sandbox(script, script_args=args, timeout_sec=timeout, backend=backend)
+        else:
+            res = run_in_sandbox(script, script_args=args, timeout_sec=timeout)
         if json_output:
             typer.echo(json.dumps(res.to_dict(), indent=2))
         else:
@@ -2197,6 +2231,85 @@ def mcp_manifest_command(
         raise typer.Exit(code=1) from exc
 
 
+@app.command("org-registry")
+def org_registry_command(
+    action: str = typer.Argument(..., help="Action: init, validate, check, approve, quarantine, or revoke."),
+    policy_file: Path = typer.Argument(Path("registry-policy.yaml"), help="Path to organization registry-policy.yaml."),
+    org: str = typer.Option("acme", "--org", help="Organization slug (used with init)."),
+    namespace: str = typer.Option("com.acme", "--namespace", help="Verified reverse-domain namespace (used with init)."),
+    entry_id: str | None = typer.Option(None, "--id", help="Registry entry ID (e.g. com.acme/my-skill)."),
+    skill_path: Path | None = typer.Option(None, "--path", help="Local skill directory or SKILL.md (used with check/approve)."),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON."),
+) -> None:
+    """Manage a federated organization subregistry (allowlist, quarantine/approve/revoke, SHA-256 pinning)."""
+    from .org_registry import OrgRegistryPolicy, scaffold_org_registry
+
+    act = action.strip().lower()
+    try:
+        if act == "init":
+            policy = scaffold_org_registry(org=org, domain_ns=namespace)
+            policy.save(policy_file)
+            out = {"initialized": True, "path": str(policy_file), "organization": org, "namespaces": policy.verified_namespaces}
+            typer.echo(json.dumps(out, indent=2) if json_output else f"Initialized organization subregistry policy -> {policy_file}")
+            return
+
+        policy = OrgRegistryPolicy.load(policy_file)
+
+        if act == "validate":
+            issues = policy.validate_governance()
+            passed = len(issues) == 0
+            out = {"passed": passed, "organization": policy.organization, "entries": len(policy.entries), "issues": issues}
+            if json_output:
+                typer.echo(json.dumps(out, indent=2))
+            else:
+                typer.echo(f"Org Registry '{policy.organization}': {'VALID' if passed else 'INVALID'} ({len(issues)} issue(s))")
+                for iss in issues:
+                    typer.echo(f"  - {iss}")
+            if not passed:
+                raise typer.Exit(code=1)
+            return
+
+        if act == "check":
+            if not entry_id or skill_path is None:
+                raise SkillForgeError("org-registry check requires --id <namespace/name> and --path <skill_dir>")
+            pkg = SkillPackage.load(skill_path)
+            res = policy.evaluate_skill_package(entry_id, pkg)
+            if json_output:
+                typer.echo(json.dumps(res, indent=2))
+            else:
+                verdict = "ALLOWED" if res["allowed"] else "DENIED"
+                typer.echo(f"[{verdict}] {res['id']} (status={res['status']}, score={res['audit_score']}/100)")
+                for r in res["reasons"]:
+                    typer.echo(f"  - {r}")
+            if not res["allowed"]:
+                raise typer.Exit(code=1)
+            return
+
+        if act in {"approve", "quarantine", "revoke"}:
+            if not entry_id:
+                raise SkillForgeError(f"org-registry {act} requires --id <namespace/name>")
+            status_map = {"approve": "approved", "quarantine": "quarantine", "revoke": "revoked"}
+            entry = policy.set_status(entry_id, status_map[act])
+            if act == "approve" and skill_path is not None:
+                entry.sha256 = SkillPackage.load(skill_path).compute_sha256()
+            policy.save(policy_file)
+            out = {"updated": True, "entry": entry.to_dict()}
+            if json_output:
+                typer.echo(json.dumps(out, indent=2))
+            else:
+                typer.echo(f"Updated '{entry.id}' -> status={entry.status} (sha256={entry.sha256[:12] or 'unpinned'})")
+            return
+
+        raise SkillForgeError(f"Unknown org-registry action '{action}'. Use: init, validate, check, approve, quarantine, revoke")
+    except (SkillForgeError, OSError) as exc:
+        if json_output:
+            typer.echo(json.dumps({"passed": False, "error": str(exc)}))
+        else:
+            typer.echo(f"Org registry error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
 if __name__ == "__main__":
     app()
+
 

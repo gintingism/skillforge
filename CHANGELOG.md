@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0 - 2026-11-26
+
+- Added **MCP Tasks, Events & File Uploads Security Coverage** (`MCP-012`–`MCP-014` in `audit-mcp` and Server Card audits; `FW-007`–`FW-009` in `MCPFirewall`), catching deprecated `tasks/list`, unlimited task TTLs, predictable task IDs, unencrypted or unauthenticated event endpoints, `x-mcp-file` credential forwarding, SSRF upload targets, `Mcp-Name` task-ID routing mismatches, and indirect prompt injection in task `statusMessage`, `inputRequests`, and event notifications.
+- Added **Live Sigstore Fulcio CA & Rekor v2 Online Signing and Verification** (`sign --sigstore --online [--staging]`, `verify-signature --sigstore-bundle --online`), backed by the optional `agent-skillforge[sigstore]` extra (`sigstore>=4.5.0`) alongside existing offline bundle verification.
+- Added **Federated Trust & Curated Organization Subregistry** (`src/skillforge/org_registry.py` and `skillforge org-registry init|validate|check|approve|quarantine|revoke`) with reverse-domain namespace validation, duplicate-upstream detection, quarantine-to-approved SHA-256 pinning, and SEP-2127 Server Card drift checks.
+- Extended **SkillForge LSP** (`skillforge lsp`) with `textDocument/codeLens` (security score plus Pointer/Body token counts), `textDocument/codeAction` (one-click AAIF 6-field `normalize` quick-fix), and AAIF 6-field autocompletions, plus added a thin **VS Code / Cursor / Open VSX extension** under `editors/vscode/`.
+- Added **Hardened Docker & AAIF OpenSandbox Backends** to `skillforge run-sandboxed --backend auto|local|bwrap|docker|opensandbox` with zero-network, read-only rootfs, and dropped Linux capabilities.
+- Added **SEP-2549 Weak `ETag` Caching** (`W/"<sha256[:16]>"`) to SEP-2640 MCP skills endpoints (`skills/list`, `skills/get`, `resources/directory/read`).
+
 ## 0.10.1 - 2026-11-25
 
 - Updated pinned `typer` dependency in `requirements.txt` from `0.28.0` to `0.29.1` and added ANSI-safe CLI compatibility regression tests (`tests/test_cli_typer_compatibility.py`).
